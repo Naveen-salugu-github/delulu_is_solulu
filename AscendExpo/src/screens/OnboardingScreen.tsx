@@ -493,7 +493,13 @@ export default function OnboardingScreen() {
               <View style={styles.summary}>
                 <SummaryRow label="Name" value={preferredName || '—'} />
                 <SummaryRow label="Location" value={locationNow || '—'} />
+                <SummaryRow label="Gender" value={gender || '—'} />
+                <SummaryRow label="Age" value={`${age} years`} />
+                <SummaryRow label="Kids" value={hasKids || '—'} />
                 <SummaryRow label="Work" value={workRole || '—'} />
+                <SummaryRow label="Self description" value={selfDescription || '—'} />
+                <SummaryRow label="Shaping event" value={shapingEvent || '—'} />
+                <SummaryRow label="Most important people" value={mostImportantPeople || '—'} />
                 <SummaryRow label="Manifesting" value={manifestation || '—'} />
                 <SummaryRow label="Focus" value={Array.from(categories).join(', ') || '—'} />
                 <SummaryRow label="Zodiac" value={zodiacSign} />
@@ -503,6 +509,7 @@ export default function OnboardingScreen() {
                 <SummaryRow label="Relationship" value={relationshipStatus} />
                 <SummaryRow label="Ideal partner" value={Array.from(partnerTraits).join(', ') || '—'} />
                 <SummaryRow label="Settlement" value={settlementVision || '—'} />
+                <SummaryRow label="Income target (annual)" value={`₹${Math.round(annual).toLocaleString('en-IN')}`} />
               </View>
               <Text style={styles.footnote}>
                 Sessions adapt when you miss tasks or protect streaks.
@@ -740,12 +747,19 @@ const styles = StyleSheet.create({
   body: { fontSize: 15, color: theme.textSecondary, lineHeight: 22, marginBottom: 16 },
   primaryBtn: {
     marginTop: 14,
-    backgroundColor: theme.accentViolet,
+    backgroundColor: 'rgba(255,255,255,0.46)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.65)',
     paddingVertical: 14,
     borderRadius: 999,
     alignItems: 'center',
+    shadowColor: '#2f1f6b',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 18,
+    elevation: 4,
   },
-  primaryBtnText: { color: '#fff', fontSize: 17, fontWeight: '600' },
+  primaryBtnText: { color: theme.textPrimary, fontSize: 17, fontWeight: '700' },
   chipWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',

@@ -71,6 +71,7 @@ export default function PlayerScreen() {
   const speechQueueIndex = useRef(0);
   const finishedRef = useRef(false);
   const ambienceRef = useRef<Audio.Sound | null>(null);
+  const isClosingRef = useRef(false);
 
   useEffect(() => {
     Animated.loop(
@@ -120,13 +121,13 @@ export default function PlayerScreen() {
       setTone(t);
       try {
         const result = await generateVisualizationNarrative(profile, t, dailyProgress);
-        if (cancelled) return;
+        if (cancelled || isClosingRef.current) return;
         setNarrative(result.text);
         setNarrativeSource(result.source);
         setPhase('playing');
         await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
       } catch {
-        if (cancelled) return;
+        if (cancelled || isClosingRef.current) return;
         setNarrative('');
         setNarrativeSource('fallback');
         setPhase('playing');
@@ -298,13 +299,14 @@ export default function PlayerScreen() {
           rate: 0.95,
           volume: 1,
           onDone: () => {
+            if (isClosingRef.current) return;
             setIsSpeaking(false);
             void speakNext();
           },
           onError: () => {
             finishedRef.current = true;
             setIsSpeaking(false);
-            setPhase('done');
+            if (!isClosingRef.current) setPhase('done');
           },
         });
       };
@@ -345,6 +347,12 @@ export default function PlayerScreen() {
   const currentSentence = sentences[currentIndex] ?? '';
 
   const close = () => {
+    isClosingRef.current = true;
+    finishedRef.current = true;
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
     Speech.stop();
     setIsSpeaking(false);
     void (async () => {
@@ -356,7 +364,7 @@ export default function PlayerScreen() {
         }
       } catch {}
     })();
-    navigation.goBack();
+    navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
   };
 
   if (!profile) {
@@ -615,11 +623,18 @@ const styles = StyleSheet.create({
   primaryBtn: {
     marginHorizontal: 20,
     marginBottom: 16,
-    backgroundColor: theme.accentViolet,
+    backgroundColor: 'rgba(255,255,255,0.46)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.65)',
     paddingVertical: 14,
     borderRadius: 999,
     alignItems: 'center',
+    shadowColor: '#2f1f6b',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 18,
+    elevation: 4,
   },
-  primaryBtnText: { color: '#fff', fontSize: 17, fontWeight: '600' },
+  primaryBtnText: { color: theme.textPrimary, fontSize: 17, fontWeight: '700' },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 16 },
 });

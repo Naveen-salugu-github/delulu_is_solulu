@@ -35,10 +35,24 @@ function buildPrompt(
   const relationshipStatus = profile.relationshipStatus ?? 'not shared';
   const partnerTraits = (profile.idealPartnerTraits ?? []).join(', ') || 'not shared';
   const settlementVision = profile.settlementVision ?? 'not shared';
+  const socialContext = (profile.mostImportantPeople ?? '').toLowerCase();
+  const scenarioHint =
+    profile.hasKids === 'Yes'
+      ? metrics.sessionListens % 3 === 0
+        ? 'family-outing-day'
+        : 'high-impact-workday'
+      : relationshipStatus === 'Dating' || relationshipStatus === 'Committed' || relationshipStatus === 'Married'
+        ? metrics.sessionListens % 2 === 0
+          ? 'date-night-day'
+          : 'high-impact-workday'
+        : socialContext.includes('friend')
+          ? 'friends-get-together-day'
+          : 'high-impact-workday';
 
   return `You are a premium visualization narrator. Generate a vivid second-person “day in the life” scene designed to be exactly one immersive 4-minute session (target 520-650 words, never exceed 650) for someone building their future self in India.
 
 Tone mode: ${tone}
+Scenario hint for this session: ${scenarioHint}
 
 The user’s inputs below are for internal grounding only. Do not echo them as a list. Do not sound like you are reading answers back. Instead, write as if their future is already reachable and their habits are already in motion.
 
@@ -51,6 +65,7 @@ Guidance:
 - Luxury should be shown through sensory details (space, time freedom, calm service, quality, travel, quiet confidence), not named luxury brands.
 - Include 1–2 spontaneous life moments that make success feel emotionally real (for example: gifting your mother something meaningful, hosting friends on a weekend trip, upgrading your home, treating family to travel). Keep these moments naturally woven into the story, not as separate “sections.”
 - Make the narrative feel like an intimate narrator describing you after you’ve arrived—like someone watching your day, or your future self describing it. Keep it cinematic and specific.
+- CRITICAL FACT ACCURACY: never replace a user-provided location, role, relationship, or people detail with a different one. If user said New York, do not say Mumbai. If a detail is missing, keep it generic instead of inventing a conflicting detail.
 - Use zodiac to shape communication rhythm and micro-behavior (pace, emphasis, tone), but do NOT mention “your zodiac sign” explicitly or rely on stereotypes.
 - Use money/lifestyle/relationship/settlement details to create lived sensory scenes (morning routine, work sessions, partner moments, city atmosphere).
 - If tone is confrontational, reference skipped days in a compassionate but direct way (“You remember the day you almost quit, and you didn’t.”). Still end with a path forward.
@@ -178,6 +193,12 @@ function localFallback(
   const partner = (profile.idealPartnerTraits ?? []).join(', ') || 'supportive and aligned';
   const settlement = profile.settlementVision ?? 'a city that expands your growth';
   const manifestation = profile.manifestation ?? `${focus}—the version of you that finally feels inevitable`;
+  const relationshipLower = relationship.toLowerCase();
+  const peopleLower = importantPeople.toLowerCase();
+  const hasKidsFlow = hasKids.toLowerCase().includes('yes');
+  const hasFriends = peopleLower.includes('friend');
+  const hasMom = peopleLower.includes('mom') || peopleLower.includes('mother');
+  const hasPartner = relationshipLower.includes('dating') || relationshipLower.includes('committed') || relationshipLower.includes('married');
 
   const opener =
     tone === 'empowering'
@@ -193,6 +214,17 @@ function localFallback(
       ? `Missed days aren’t a verdict. They’re friction you can learn from. You notice the pattern, and then you change it—today, in small ways that actually stick.`
       : `Your streak is not a trophy. It’s evidence. It proves you can steer your attention, even when nobody is watching.`;
 
+  const dynamicMomentA = hasMom
+    ? `In between calls, life reminds you why this matters. It is your mother’s birthday week, and you finalize a gift she once admired and never asked for. You do not overthink. You send it. Later, her voice note is soft, proud, and emotional.`
+    : `In between calls, life reminds you why this matters. You send a meaningful gift to someone who stood by you in your hardest season, and the reply carries the kind of gratitude money alone cannot buy.`;
+  const dynamicMomentB = hasKidsFlow
+    ? `By evening, you keep your promise to your kids and step out for an outing that feels fully present. No rushing, no distracted scrolling. Just laughter, stories, and time you can actually give.`
+    : hasPartner
+      ? `By evening, there is a date plan waiting without drama. You are present, relaxed, and generous with attention. Success does not make you distant. It makes you available to what matters.`
+      : hasFriends
+        ? `By evening, friends gather for a relaxed plan already booked. It might be a yacht day, a coastal drive, or dinner with a skyline view. The point is simple: joy now fits in your life naturally.`
+        : `By evening, you plan a short luxury break with people you care about. Details get handled fast because your systems and finances are finally aligned with the life you imagined.`;
+
   const body = `${name}, imagine this clearly. It’s a real day in your future life. You are ${selfDescription}. You live in ${location}. You move through ${age} with grounded intent. Your ${gender} expression feels authentic, and ${hasKids} is held with care, not chaos.
 
 You wake up in a space that feels like relief. Light spills across a clean surface. A glass of water waits where you always leave it. Your phone is already full, but it doesn’t own you. You choose the first ten minutes. You breathe. You stretch. You feel the quiet power in your chest that comes from doing this enough times.
@@ -201,9 +233,9 @@ Your morning looks like the life you asked for—${tags}. Not flashy. Just unmis
 
 Midday is busy. The kind of busy you once thought you could never hold. In ${workRole}, you’re the person people wait for before they decide. Your calendar has weight. Your work has consequences. You enter a meeting and the room settles without you asking. You speak with calm, and it lands. Money is handled like logistics now, not like emotion. You see it in the small choices: you don’t bargain with your standards. You don’t delay the hard call. You move.
 
-In between calls, life reminds you why this matters. It’s your mother’s birthday week, and you finalize a gift she once pointed at and laughed away as too much. This time, you don’t overthink. You just send it. Later, her voice note is soft and disbelieving, and you listen to it twice.
+${dynamicMomentA}
 
-By late afternoon, plans lock in for a weekend break. Friends in the group chat, travel details done in minutes, not months. Maybe it’s a short yacht day, maybe it’s a quiet coastal stay, maybe it’s a city escape with good food and no rush. The point is not showing off. The point is you built a life where joy fits without permission.
+${dynamicMomentB}
 
 What you want most—${manifestation}—stops feeling like a wish and starts feeling like a direction. Even when fear shows up—${fears}—you don’t debate it. You answer with the next right step, the one you can repeat.
 
