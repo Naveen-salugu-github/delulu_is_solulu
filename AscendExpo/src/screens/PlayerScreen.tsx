@@ -72,6 +72,7 @@ export default function PlayerScreen() {
   const finishedRef = useRef(false);
   const ambienceRef = useRef<Audio.Sound | null>(null);
   const isClosingRef = useRef(false);
+  const hasStartedSessionRef = useRef(false);
 
   useEffect(() => {
     Animated.loop(
@@ -114,6 +115,8 @@ export default function PlayerScreen() {
 
   useEffect(() => {
     if (!profile) return;
+    if (hasStartedSessionRef.current) return;
+    hasStartedSessionRef.current = true;
     let cancelled = false;
     (async () => {
       const completed = todayTasks.filter((t) => t.isCompleted).length;
@@ -136,7 +139,7 @@ export default function PlayerScreen() {
     return () => {
       cancelled = true;
     };
-  }, [profile, dailyProgress, todayTasks]);
+  }, [profile, dailyProgress, todayTasks.length]);
 
   useEffect(() => {
     if (!profile) return;
