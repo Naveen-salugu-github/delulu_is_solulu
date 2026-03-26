@@ -1,5 +1,11 @@
 import type { DailyProgress, FutureSelfProfile, NarrativeToneKind } from '../types';
 
+export type NarrativeSource = 'groq' | 'fallback';
+export type NarrativeResult = {
+  text: string;
+  source: NarrativeSource;
+};
+
 function buildPrompt(
   profile: FutureSelfProfile,
   tone: NarrativeToneKind,
@@ -86,9 +92,9 @@ export async function generateVisualizationNarrative(
   profile: FutureSelfProfile,
   tone: NarrativeToneKind,
   metrics: DailyProgress
-): Promise<string> {
+): Promise<NarrativeResult> {
   const groqKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
-  if (!groqKey) return localFallback(profile, tone, metrics);
+  if (!groqKey) return { text: localFallback(profile, tone, metrics), source: 'fallback' };
 
   const baseURL = 'https://api.groq.com/openai/v1/chat/completions';
   // Groq deprecated `llama3-8b-8192`; recommended replacement is `llama-3.1-8b-instant`.
@@ -125,15 +131,15 @@ export async function generateVisualizationNarrative(
       model,
       detail: detail?.slice(0, 800),
     });
-    return localFallback(profile, tone, metrics);
+    return { text: localFallback(profile, tone, metrics), source: 'fallback' };
   }
 
   const data = (await res.json()) as {
     choices?: { message?: { content?: string } }[];
   };
   const text = data.choices?.[0]?.message?.content?.trim();
-  if (!text) return localFallback(profile, tone, metrics);
-  return text;
+  if (!text) return { text: localFallback(profile, tone, metrics), source: 'fallback' };
+  return { text, source: 'groq' };
 }
 
 function localFallback(
@@ -141,7 +147,18 @@ function localFallback(
   tone: NarrativeToneKind,
   metrics: DailyProgress
 ): string {
-  const name = profile.preferredName ?? 'you';
+  const name = profile.preferredName?.trim() || 'you';
+  const location = profile.locationNow?.trim() || 'your city';
+  const gender = profile.gender?.trim() || 'your identity';
+  const age = profile.age != null ? `${profile.age}` : 'this season of life';
+  const hasKids = profile.hasKids?.trim() || 'your family reality';
+  const workRole = profile.workRole?.trim() || 'your current work';
+  const workFeeling = profile.workFeeling?.trim() || 'mixed feelings';
+  const recentBuild = profile.recentBuild?.trim() || 'small proof of momentum';
+  const selfDescription = profile.selfDescription?.trim() || 'someone learning to trust their own pace';
+  const shapingEvent = profile.shapingEvent?.trim() || 'a hard chapter that taught resilience';
+  const currentStruggle = profile.currentStruggle?.trim() || 'old patterns that still pull at times';
+  const importantPeople = profile.mostImportantPeople?.trim() || 'the people you love';
   const focus = profile.goals.join(', ');
   const tags = profile.lifestyleTags.join(', ');
   const traits = profile.personalityTraits.join(', ');
@@ -167,13 +184,19 @@ function localFallback(
       ? `Missed days aren’t a verdict. They’re friction you can learn from. You notice the pattern, and then you change it—today, in small ways that actually stick.`
       : `Your streak is not a trophy. It’s evidence. It proves you can steer your attention, even when nobody is watching.`;
 
-  const body = `Picture your mornings in a life that matches what you described: ${tags}. Your ${zodiac} nature shapes your pace—you notice the urge to escape, and you stay present just long enough to move. You lead with ${traits}, not as a performance, but as a natural response to the person you’re becoming.
+  const body = `${name}, imagine this clearly. You are ${selfDescription}. You live in ${location}. You move through ${age} with grounded intent. Your ${gender} expression feels authentic, and ${hasKids} is held with care, not chaos.
 
-What you want most—${manifestation}—stops feeling like a wish and starts feeling like a direction. And the reason it matters—${whyImportant}—becomes your anchor when the day tries to pull you back into old habits. Even when fear shows up—${fears}—you don’t debate it. You answer with the next right step, the one you can repeat.
+At work, in ${workRole}, you no longer drift. Even when it feels like ${workFeeling}, you return to structure. You remember what you built recently—${recentBuild}—and you use it as evidence that momentum is real.
+
+Picture your mornings in a life that matches what you described: ${tags}. Your ${zodiac} nature shapes your pace—you notice the urge to escape, and you stay present just long enough to move. You lead with ${traits}, not as a performance, but as a natural response to the person you’re becoming.
+
+What you want most—${manifestation}—stops feeling like a wish and starts feeling like a direction. And the reason it matters—${whyImportant}—becomes your anchor when the day tries to pull you back into old habits. Even when fear shows up—${fears}—or you feel ${currentStruggle}, you don’t debate it. You answer with the next right step, the one you can repeat.
 
 In love, your standards are quiet but clear. With ${relationship} energy, you don’t chase reassurance—you create safety. A partner who matches ${partner} feels close in the small moments: the check-in that doesn’t feel forced, the presence that doesn’t try to fix, the warmth that feels earned.
 
-And in the place you want to settle—${settlement}—your life has a rhythm. You can hear it in the city air, feel it in your body, and sense it in your choices: steady, deliberate, and yours.
+And in the place you want to settle—${settlement}—your life has a rhythm. You can hear it in the city air, feel it in your body, and sense it in your choices: steady, deliberate, and yours. The people who matter most—${importantPeople}—feel that shift in you before you say a word.
+
+Even the chapter that shaped you—${shapingEvent}—is no longer just pain to carry. It becomes wisdom you walk with.
 
 When doubt rises, you breathe like someone who has practiced returning to center. Then you open your eyes and carry one scene with you—the sound of your future morning, the steadiness in your hands, and the subtle message that says: you’re already doing it.`;
 
