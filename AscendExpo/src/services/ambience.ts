@@ -1,6 +1,7 @@
 import type { FutureSelfProfile } from '../types';
 
 export type AmbienceKind = 'rain' | 'waves' | 'wind' | 'birds';
+export type AmbienceSource = number;
 
 export function pickAmbience(profile: FutureSelfProfile): AmbienceKind {
   const tags = (profile.lifestyleTags ?? []).join(' ').toLowerCase();
@@ -16,21 +17,17 @@ export function pickAmbience(profile: FutureSelfProfile): AmbienceKind {
   return 'rain';
 }
 
-/**
- * Web-safe ambient URLs.
- * You can replace these with your own hosted files later.
- */
-export function ambienceUrl(kind: AmbienceKind): string {
+export function ambienceSource(kind: AmbienceKind): AmbienceSource {
   switch (kind) {
     case 'waves':
-      return 'https://assets.mixkit.co/sfx/download/mixkit-sea-waves-loop-1196.mp3';
+      return require('../../assets/ambience/waves.wav');
     case 'wind':
-      return 'https://assets.mixkit.co/sfx/download/mixkit-wind-in-the-trees-1170.mp3';
+      return require('../../assets/ambience/wind.wav');
     case 'birds':
-      return 'https://assets.mixkit.co/sfx/download/mixkit-forest-birds-ambience-1210.mp3';
+      return require('../../assets/ambience/birds.wav');
     case 'rain':
     default:
-      return 'https://assets.mixkit.co/sfx/download/mixkit-rain-loop-1243.mp3';
+      return require('../../assets/ambience/rain.wav');
   }
 }
 

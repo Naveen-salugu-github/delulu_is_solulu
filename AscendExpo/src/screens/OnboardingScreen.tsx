@@ -22,7 +22,7 @@ import { theme } from '../theme';
 import { useApp } from '../context/AppContext';
 import type { FutureSelfProfile, LifeCategory, RootStackParamList, UserProfile } from '../types';
 import { LIFE_CATEGORIES } from '../types';
-import { formatIncomeAnnualINR, incomeFromSlider } from '../services/income';
+import { incomeFromSlider } from '../services/income';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -64,20 +64,15 @@ export default function OnboardingScreen() {
   const [preferredName, setPreferredName] = useState('');
   const [locationNow, setLocationNow] = useState('');
   const [gender, setGender] = useState<string>('Prefer not to say');
-  const [age, setAge] = useState<string>('');
+  const [age, setAge] = useState<number>(24);
   const [hasKids, setHasKids] = useState<string>('No');
   const [workRole, setWorkRole] = useState('');
-  const [workFeeling, setWorkFeeling] = useState('');
-  const [recentBuild, setRecentBuild] = useState('');
   const [selfDescription, setSelfDescription] = useState('');
   const [shapingEvent, setShapingEvent] = useState('');
-  const [currentStruggle, setCurrentStruggle] = useState('');
   const [mostImportantPeople, setMostImportantPeople] = useState('');
   const [manifestation, setManifestation] = useState('');
-  const [whyImportant, setWhyImportant] = useState('');
 
   const [categories, setCategories] = useState<Set<LifeCategory>>(new Set());
-  const [incomeT, setIncomeT] = useState(0.35);
   const [lifestyle, setLifestyle] = useState<Set<string>>(new Set());
   const [personality, setPersonality] = useState<Set<string>>(new Set());
   const [fears, setFears] = useState<Set<string>>(new Set());
@@ -86,8 +81,8 @@ export default function OnboardingScreen() {
   const [partnerTraits, setPartnerTraits] = useState<Set<string>>(new Set());
   const [settlementVision, setSettlementVision] = useState<string>('');
 
-  const annual = useMemo(() => incomeFromSlider(incomeT), [incomeT]);
-  const incomeLabel = useMemo(() => formatIncomeAnnualINR(annual), [annual]);
+  // Income horizon question removed; keep a sensible default target for task/narrative structure.
+  const annual = useMemo(() => incomeFromSlider(0.45), []);
 
   const next = () => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -118,17 +113,13 @@ export default function OnboardingScreen() {
       preferredName: preferredName.trim() || undefined,
       locationNow: locationNow.trim() || undefined,
       gender,
-      age: age.trim() ? Number(age.replace(/[^\d]/g, '')) : null,
+      age,
       hasKids,
       workRole: workRole.trim() || undefined,
-      workFeeling: workFeeling.trim() || undefined,
-      recentBuild: recentBuild.trim() || undefined,
       selfDescription: selfDescription.trim() || undefined,
       shapingEvent: shapingEvent.trim() || undefined,
-      currentStruggle: currentStruggle.trim() || undefined,
       mostImportantPeople: mostImportantPeople.trim() || undefined,
       manifestation: manifestation.trim() || undefined,
-      whyImportant: whyImportant.trim() || undefined,
       goals: Array.from(categories),
       incomeTargetAnnualINR: annual,
       lifestyleTags: Array.from(lifestyle).sort(),
@@ -166,22 +157,21 @@ export default function OnboardingScreen() {
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           {step === 0 && (
             <View>
-              <TypewriterText
-                text="Before we begin, I have a few questions. The more detail you share, the better the experience becomes. Everything you share is completely confidential."
-                style={styles.hero}
-                onDone={() => setTypingDone(true)}
-              />
-              {typingDone && (
-                <Pressable
-                  style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.88 }]}
-                  onPress={() => {
-                    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    next();
-                  }}
-                >
-                  <Text style={styles.primaryBtnText}>Continue</Text>
-                </Pressable>
-              )}
+              <Text style={styles.appName}>ASCEND</Text>
+              <Text style={styles.hero}>Meet your future self, and begin manifesting your way there.</Text>
+              <Text style={styles.body}>
+                Before we begin, I have a few questions. The more detail you give, the better the app experience.
+                Everything you share is completely confidential.
+              </Text>
+              <Pressable
+                style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.88 }]}
+                onPress={() => {
+                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  next();
+                }}
+              >
+                <Text style={styles.primaryBtnText}>Start</Text>
+              </Pressable>
             </View>
           )}
 
@@ -199,21 +189,6 @@ export default function OnboardingScreen() {
           )}
 
           {step === 2 && (
-            <View>
-              <TypewriterText
-                text={preferredName.trim() ? `Lovely, ${preferredName.trim()}.` : 'Lovely.'}
-                style={styles.title}
-                onDone={() => setTypingDone(true)}
-              />
-              {typingDone && (
-                <Pressable style={styles.primaryBtn} onPress={next}>
-                  <Text style={styles.primaryBtnText}>Continue</Text>
-                </Pressable>
-              )}
-            </View>
-          )}
-
-          {step === 3 && (
             <TextStep
               title="Where do you live?"
               subtitle="City + country is perfect."
@@ -226,7 +201,7 @@ export default function OnboardingScreen() {
             />
           )}
 
-          {step === 4 && (
+          {step === 3 && (
             <ChipStepTyped
               title="Gender"
               subtitle="Optional, but it helps me match tone."
@@ -243,21 +218,19 @@ export default function OnboardingScreen() {
             />
           )}
 
-          {step === 5 && (
-            <TextStep
+          {step === 4 && (
+            <AgeStep
               title="Age"
               subtitle="Optional."
               value={age}
               onChange={setAge}
-              placeholder="e.g. 24"
-              keyboard="number-pad"
               typingDone={typingDone}
               onTyped={() => setTypingDone(true)}
               onContinue={next}
             />
           )}
 
-          {step === 6 && (
+          {step === 5 && (
             <ChipStepTyped
               title="Do you have kids?"
               subtitle="Optional."
@@ -274,7 +247,7 @@ export default function OnboardingScreen() {
             />
           )}
 
-          {step === 7 && (
+          {step === 6 && (
             <TextStep
               title="What do you do for work?"
               subtitle="Role + industry is enough."
@@ -287,35 +260,7 @@ export default function OnboardingScreen() {
             />
           )}
 
-          {step === 8 && (
-            <TextStep
-              title="How do you feel about your work right now?"
-              subtitle="Be honest. This shapes the narrative tone."
-              value={workFeeling}
-              onChange={setWorkFeeling}
-              placeholder="e.g. stuck but hungry"
-              multiline
-              typingDone={typingDone}
-              onTyped={() => setTypingDone(true)}
-              onContinue={next}
-            />
-          )}
-
-          {step === 9 && (
-            <TextStep
-              title="What have you built recently?"
-              subtitle="A win, a project, a habit, anything."
-              value={recentBuild}
-              onChange={setRecentBuild}
-              placeholder="e.g. launched a landing page"
-              multiline
-              typingDone={typingDone}
-              onTyped={() => setTypingDone(true)}
-              onContinue={next}
-            />
-          )}
-
-          {step === 10 && (
+          {step === 7 && (
             <TextStep
               title="Since we never met, describe yourself."
               subtitle="A few lines. How you move, think, and react."
@@ -329,7 +274,7 @@ export default function OnboardingScreen() {
             />
           )}
 
-          {step === 11 && (
+          {step === 8 && (
             <TextStep
               title="What’s something you’ve been through that shaped who you are today?"
               subtitle="You can be brief."
@@ -343,21 +288,7 @@ export default function OnboardingScreen() {
             />
           )}
 
-          {step === 12 && (
-            <TextStep
-              title="If you’re struggling with something, tell me now."
-              subtitle="This becomes part of your future-self message."
-              value={currentStruggle}
-              onChange={setCurrentStruggle}
-              placeholder="e.g. procrastination, anxiety, distractions…"
-              multiline
-              typingDone={typingDone}
-              onTyped={() => setTypingDone(true)}
-              onContinue={next}
-            />
-          )}
-
-          {step === 13 && (
+          {step === 9 && (
             <ChipStepTyped
               title="Relationship status"
               subtitle="So the story feels real."
@@ -374,7 +305,7 @@ export default function OnboardingScreen() {
             />
           )}
 
-          {step === 14 && (
+          {step === 10 && (
             <TextStep
               title="Who are the most important people in your life?"
               subtitle="Names or roles."
@@ -388,7 +319,7 @@ export default function OnboardingScreen() {
             />
           )}
 
-          {step === 15 && (
+          {step === 11 && (
             <TextStep
               title="Tell me what you want most."
               subtitle="Describe what you are manifesting."
@@ -402,21 +333,7 @@ export default function OnboardingScreen() {
             />
           )}
 
-          {step === 16 && (
-            <TextStep
-              title="Why is this so important?"
-              subtitle="Your real reason."
-              value={whyImportant}
-              onChange={setWhyImportant}
-              placeholder="e.g. freedom, proving it to myself…"
-              multiline
-              typingDone={typingDone}
-              onTyped={() => setTypingDone(true)}
-              onContinue={next}
-            />
-          )}
-
-          {step === 17 && (
+          {step === 12 && (
             <View>
               <TypewriterText
                 text="Now we’ll shape the structure—goals, lifestyle, mindset."
@@ -462,38 +379,7 @@ export default function OnboardingScreen() {
             </View>
           )}
 
-          {step === 18 && (
-            <View>
-              <TypewriterText
-                text="Your income horizon."
-                style={styles.title}
-                onDone={() => setTypingDone(true)}
-              />
-              {typingDone && (
-                <>
-                  <Text style={styles.body}>Slide from a steady foundation to a generational scale.</Text>
-                  <View style={styles.sliderCard}>
-                    <Text style={styles.incomeBig}>{incomeLabel}</Text>
-                    <Slider
-                      style={styles.slider}
-                      minimumValue={0}
-                      maximumValue={1}
-                      value={incomeT}
-                      onValueChange={setIncomeT}
-                      minimumTrackTintColor={theme.accentCyan}
-                      maximumTrackTintColor="rgba(255,255,255,0.2)"
-                      thumbTintColor={theme.textPrimary}
-                    />
-                  </View>
-                  <Pressable style={styles.primaryBtn} onPress={next}>
-                    <Text style={styles.primaryBtnText}>Continue</Text>
-                  </Pressable>
-                </>
-              )}
-            </View>
-          )}
-
-          {step === 19 && (
+          {step === 13 && (
             <ChipStep
               title="What does your ideal life look like?"
               subtitle="Pick the scenes that feel true."
@@ -512,7 +398,7 @@ export default function OnboardingScreen() {
             />
           )}
 
-          {step === 20 && (
+          {step === 14 && (
             <ChipStep
               title="Personality traits"
               subtitle="Choose traits your future self leads with."
@@ -531,7 +417,7 @@ export default function OnboardingScreen() {
             />
           )}
 
-          {step === 21 && (
+          {step === 15 && (
             <ChipStep
               title="What holds you back today?"
               subtitle="Name the friction so the story can transform it."
@@ -550,7 +436,7 @@ export default function OnboardingScreen() {
             />
           )}
 
-          {step === 22 && (
+          {step === 16 && (
             <ChipStep
               title="What is your zodiac sign?"
               subtitle="We use this to shape communication style and emotional pacing."
@@ -565,7 +451,7 @@ export default function OnboardingScreen() {
             />
           )}
 
-          {step === 23 && (
+          {step === 17 && (
             <ChipStep
               title="Your ideal girlfriend / partner traits"
               subtitle="Pick what matters most to you emotionally and practically."
@@ -584,7 +470,7 @@ export default function OnboardingScreen() {
             />
           )}
 
-          {step === 24 && (
+          {step === 18 && (
             <View>
               <Text style={styles.title}>Where do you want to settle?</Text>
               <Text style={styles.body}>City/country or vibe: \"Dubai\", \"Bangalore\", \"Bali by the beach\".</Text>
@@ -601,16 +487,21 @@ export default function OnboardingScreen() {
             </View>
           )}
 
-          {step === 25 && (
+          {step === 19 && (
             <View>
               <Text style={styles.title}>Your future self profile</Text>
               <View style={styles.summary}>
                 <SummaryRow label="Name" value={preferredName || '—'} />
                 <SummaryRow label="Location" value={locationNow || '—'} />
+                <SummaryRow label="Gender" value={gender || '—'} />
+                <SummaryRow label="Age" value={`${age} years`} />
+                <SummaryRow label="Kids" value={hasKids || '—'} />
                 <SummaryRow label="Work" value={workRole || '—'} />
+                <SummaryRow label="Self description" value={selfDescription || '—'} />
+                <SummaryRow label="Shaping event" value={shapingEvent || '—'} />
+                <SummaryRow label="Most important people" value={mostImportantPeople || '—'} />
                 <SummaryRow label="Manifesting" value={manifestation || '—'} />
                 <SummaryRow label="Focus" value={Array.from(categories).join(', ') || '—'} />
-                <SummaryRow label="Income" value={incomeLabel} />
                 <SummaryRow label="Zodiac" value={zodiacSign} />
                 <SummaryRow label="Lifestyle" value={Array.from(lifestyle).join(', ') || '—'} />
                 <SummaryRow label="Traits" value={Array.from(personality).join(', ') || '—'} />
@@ -618,6 +509,7 @@ export default function OnboardingScreen() {
                 <SummaryRow label="Relationship" value={relationshipStatus} />
                 <SummaryRow label="Ideal partner" value={Array.from(partnerTraits).join(', ') || '—'} />
                 <SummaryRow label="Settlement" value={settlementVision || '—'} />
+                <SummaryRow label="Income target (annual)" value={`₹${Math.round(annual).toLocaleString('en-IN')}`} />
               </View>
               <Text style={styles.footnote}>
                 Sessions adapt when you miss tasks or protect streaks.
@@ -633,6 +525,52 @@ export default function OnboardingScreen() {
         </ScrollView>
       </SafeAreaView>
     </GradientBackground>
+  );
+}
+
+function AgeStep({
+  title,
+  subtitle,
+  value,
+  onChange,
+  onContinue,
+  typingDone,
+  onTyped,
+}: {
+  title: string;
+  subtitle: string;
+  value: number;
+  onChange: (v: number) => void;
+  onContinue: () => void;
+  typingDone: boolean;
+  onTyped: () => void;
+}) {
+  return (
+    <View>
+      <TypewriterText text={title} style={styles.title} onDone={onTyped} />
+      {typingDone && (
+        <>
+          <Text style={styles.body}>{subtitle}</Text>
+          <View style={styles.sliderCard}>
+            <Text style={styles.incomeBig}>{Math.round(value)} years</Text>
+            <Slider
+              style={styles.slider}
+              minimumValue={16}
+              maximumValue={70}
+              step={1}
+              value={value}
+              onValueChange={onChange}
+              minimumTrackTintColor={theme.accentCyan}
+              maximumTrackTintColor="rgba(255,255,255,0.2)"
+              thumbTintColor={theme.textPrimary}
+            />
+          </View>
+          <Pressable style={styles.primaryBtn} onPress={onContinue}>
+            <Text style={styles.primaryBtnText}>Continue</Text>
+          </Pressable>
+        </>
+      )}
+    </View>
   );
 }
 
@@ -791,23 +729,37 @@ const styles = StyleSheet.create({
   iconBtn: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
   brand: { fontSize: 13, fontWeight: '600', color: theme.textSecondary },
   scroll: { paddingHorizontal: 20, paddingBottom: 40, paddingTop: 12 },
+  appName: {
+    fontSize: 54,
+    fontWeight: '800',
+    letterSpacing: 2,
+    color: theme.accentViolet,
+    marginBottom: 10,
+  },
   hero: {
-    fontSize: 32,
+    fontSize: 34,
     fontWeight: '600',
     color: theme.textPrimary,
     marginBottom: 16,
-    lineHeight: 40,
+    lineHeight: 42,
   },
   title: { fontSize: 22, fontWeight: '600', color: theme.textPrimary, marginBottom: 8 },
   body: { fontSize: 15, color: theme.textSecondary, lineHeight: 22, marginBottom: 16 },
   primaryBtn: {
     marginTop: 14,
-    backgroundColor: theme.accentViolet,
+    backgroundColor: 'rgba(255,255,255,0.46)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.65)',
     paddingVertical: 14,
     borderRadius: 999,
     alignItems: 'center',
+    shadowColor: '#2f1f6b',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 18,
+    elevation: 4,
   },
-  primaryBtnText: { color: '#fff', fontSize: 17, fontWeight: '600' },
+  primaryBtnText: { color: theme.textPrimary, fontSize: 17, fontWeight: '700' },
   chipWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',

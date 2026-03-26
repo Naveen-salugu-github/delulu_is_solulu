@@ -6,6 +6,9 @@ export type NarrativeResult = {
   source: NarrativeSource;
 };
 
+const TARGET_MIN_WORDS = 520;
+const TARGET_MAX_WORDS = 650;
+
 function buildPrompt(
   profile: FutureSelfProfile,
   tone: NarrativeToneKind,
@@ -17,14 +20,10 @@ function buildPrompt(
   const age = profile.age != null ? `${profile.age}` : 'not shared';
   const kids = profile.hasKids ?? 'not shared';
   const workRole = profile.workRole ?? 'not shared';
-  const workFeeling = profile.workFeeling ?? 'not shared';
-  const recentBuild = profile.recentBuild ?? 'not shared';
   const selfDesc = profile.selfDescription ?? 'not shared';
   const shapingEvent = profile.shapingEvent ?? 'not shared';
-  const struggle = profile.currentStruggle ?? 'not shared';
   const importantPeople = profile.mostImportantPeople ?? 'not shared';
   const manifestation = profile.manifestation ?? 'not shared';
-  const whyImportant = profile.whyImportant ?? 'not shared';
 
   const goals = profile.goals.join(', ');
   const income = `₹ annual target ${Math.round(profile.incomeTargetAnnualINR)}`;
@@ -36,23 +35,45 @@ function buildPrompt(
   const relationshipStatus = profile.relationshipStatus ?? 'not shared';
   const partnerTraits = (profile.idealPartnerTraits ?? []).join(', ') || 'not shared';
   const settlementVision = profile.settlementVision ?? 'not shared';
+  const socialContext = (profile.mostImportantPeople ?? '').toLowerCase();
+  const scenarioHint =
+    profile.hasKids === 'Yes'
+      ? metrics.sessionListens % 3 === 0
+        ? 'family-outing-day'
+        : 'high-impact-workday'
+      : relationshipStatus === 'Dating' || relationshipStatus === 'Committed' || relationshipStatus === 'Married'
+        ? metrics.sessionListens % 2 === 0
+          ? 'date-night-day'
+          : 'high-impact-workday'
+        : socialContext.includes('friend')
+          ? 'friends-get-together-day'
+          : 'high-impact-workday';
 
-  return `You are a premium visualization coach. Generate a vivid second-person narrative designed to be ~4 minutes spoken aloud (roughly 520–650 words) for someone building their future self in India.
+  return `You are a premium visualization narrator. Generate a vivid second-person “day in the life” scene designed to be exactly one immersive 4-minute session (target 520-650 words, never exceed 650) for someone building their future self in India.
 
 Tone mode: ${tone}
+Scenario hint for this session: ${scenarioHint}
 
 The user’s inputs below are for internal grounding only. Do not echo them as a list. Do not sound like you are reading answers back. Instead, write as if their future is already reachable and their habits are already in motion.
 
 Guidance:
 - Second person POV: use “you”.
 - Start immediately inside a sensory scene the user can inhabit (no long preface). Within the first 2–3 sentences, anchor: place, time of day, body sensation, one concrete object.
-- Make the narrative feel like the future self is speaking with subtle reassurance and specific, emotionally grounded details.
+- This MUST feel like a narrated “day in your future life” with a beginning, middle, and end. Do not write generic motivation. Do not write aphorisms or quotes.
+- Use a natural day arc in 3 movements: morning (arrival + identity), midday (busy/impactful work + money/leadership), evening (love/home/meaning + calm close).
+- Make the day feel busy in a satisfying way: meetings, deep work blocks, messages, travel, training, creative flow—specific but not brand-heavy.
+- Luxury should be shown through sensory details (space, time freedom, calm service, quality, travel, quiet confidence), not named luxury brands.
+- Include 1–2 spontaneous life moments that make success feel emotionally real (for example: gifting your mother something meaningful, hosting friends on a weekend trip, upgrading your home, treating family to travel). Keep these moments naturally woven into the story, not as separate “sections.”
+- Make the narrative feel like an intimate narrator describing you after you’ve arrived—like someone watching your day, or your future self describing it. Keep it cinematic and specific.
+- CRITICAL FACT ACCURACY: never replace a user-provided location, role, relationship, or people detail with a different one. If user said New York, do not say Mumbai. If a detail is missing, keep it generic instead of inventing a conflicting detail.
 - Use zodiac to shape communication rhythm and micro-behavior (pace, emphasis, tone), but do NOT mention “your zodiac sign” explicitly or rely on stereotypes.
 - Use money/lifestyle/relationship/settlement details to create lived sensory scenes (morning routine, work sessions, partner moments, city atmosphere).
 - If tone is confrontational, reference skipped days in a compassionate but direct way (“You remember the day you almost quit, and you didn’t.”). Still end with a path forward.
 - Avoid guarantees of outcomes. Keep it grounded and realistic.
 - No bullet points. Paragraphs only. No headings. No quotes used as formatting.
 - Keep sentence structure suitable for subtitles and TTS: clear sentence endings, not extremely long sentences.
+- Use mostly present tense. Keep momentum words active and embodied (breathe, notice, choose, move, return, commit).
+- End with a grounded closeout for immediate action after this 4-minute session: one concrete action the user will take right after listening (small, specific, repeatable).
 
 User inputs (internal use only):
 - Preferred name to use in voice: ${name}
@@ -61,14 +82,10 @@ User inputs (internal use only):
 - Age: ${age}
 - Kids: ${kids}
 - Work: ${workRole}
-- Feelings about work: ${workFeeling}
-- Recently built: ${recentBuild}
 - Self description: ${selfDesc}
 - Shaping experience: ${shapingEvent}
-- Current struggle: ${struggle}
 - Most important people: ${importantPeople}
 - What they want most (manifestation): ${manifestation}
-- Why it matters: ${whyImportant}
 - Life focus areas: ${goals}
 - Income target: ${income}
 - Lifestyle vision tags: ${lifestyle}
@@ -95,7 +112,12 @@ export async function generateVisualizationNarrative(
   metrics: DailyProgress
 ): Promise<NarrativeResult> {
   const groqKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
-  if (!groqKey) return { text: localFallback(profile, tone, metrics), source: 'fallback' };
+  if (!groqKey) {
+    return {
+      text: normalizeNarrativeLength(localFallback(profile, tone, metrics)),
+      source: 'fallback',
+    };
+  }
 
   const baseURL = 'https://api.groq.com/openai/v1/chat/completions';
   // Groq deprecated `llama3-8b-8192`; recommended replacement is `llama-3.1-8b-instant`.
@@ -139,8 +161,13 @@ export async function generateVisualizationNarrative(
     choices?: { message?: { content?: string } }[];
   };
   const text = data.choices?.[0]?.message?.content?.trim();
-  if (!text) return { text: localFallback(profile, tone, metrics), source: 'fallback' };
-  return { text, source: 'groq' };
+  if (!text) {
+    return {
+      text: normalizeNarrativeLength(localFallback(profile, tone, metrics)),
+      source: 'fallback',
+    };
+  }
+  return { text: normalizeNarrativeLength(text), source: 'groq' };
 }
 
 function localFallback(
@@ -154,11 +181,8 @@ function localFallback(
   const age = profile.age != null ? `${profile.age}` : 'this season of life';
   const hasKids = profile.hasKids?.trim() || 'your family reality';
   const workRole = profile.workRole?.trim() || 'your current work';
-  const workFeeling = profile.workFeeling?.trim() || 'mixed feelings';
-  const recentBuild = profile.recentBuild?.trim() || 'small proof of momentum';
   const selfDescription = profile.selfDescription?.trim() || 'someone learning to trust their own pace';
   const shapingEvent = profile.shapingEvent?.trim() || 'a hard chapter that taught resilience';
-  const currentStruggle = profile.currentStruggle?.trim() || 'old patterns that still pull at times';
   const importantPeople = profile.mostImportantPeople?.trim() || 'the people you love';
   const focus = profile.goals.join(', ');
   const tags = profile.lifestyleTags.join(', ');
@@ -169,39 +193,63 @@ function localFallback(
   const partner = (profile.idealPartnerTraits ?? []).join(', ') || 'supportive and aligned';
   const settlement = profile.settlementVision ?? 'a city that expands your growth';
   const manifestation = profile.manifestation ?? `${focus}—the version of you that finally feels inevitable`;
-  const whyImportant = profile.whyImportant ?? 'because you are done living below your potential';
+  const relationshipLower = relationship.toLowerCase();
+  const peopleLower = importantPeople.toLowerCase();
+  const hasKidsFlow = hasKids.toLowerCase().includes('yes');
+  const hasFriends = peopleLower.includes('friend');
+  const hasMom = peopleLower.includes('mom') || peopleLower.includes('mother');
+  const hasPartner = relationshipLower.includes('dating') || relationshipLower.includes('committed') || relationshipLower.includes('married');
 
   const opener =
     tone === 'empowering'
-      ? `You wake up and the air feels different—like a quiet agreement you kept. ${name}, the life you’ve been aiming at is already forming in your routines, and you can feel it in the steadiness of your breath.`
+      ? `Morning arrives and you’re already moving. ${name}, the day feels full in a good way—clear, intentional, expensive in the currency of calm.`
       : tone === 'confrontational'
-        ? `You remember the days you almost quit. Not dramatically. Just quietly. And you feel the moment you chose discipline anyway—because you are not here to bargain with yourself anymore.`
+        ? `Morning arrives and you remember the days you almost quit. Not dramatically. Just quietly. And you feel the moment you chose discipline anyway—because you are not here to bargain with yourself anymore.`
         : tone === 'supportive'
-          ? `If today felt heavier than you expected, you don’t punish yourself. You return gently—because the future you want is built from repairs, not from perfect straight lines.`
-          : `Close your eyes. The room softens. You step forward in your mind with the same calm you bring to your real life—one honest action at a time.`;
+          ? `Morning arrives, gentle. If yesterday felt heavier than you expected, you don’t punish yourself. You return, and the return is the whole skill.`
+          : `Morning arrives. The room softens. Your breath deepens. You step into a day that fits you.`;
 
   const behavior =
     metrics.missedDays > 0
       ? `Missed days aren’t a verdict. They’re friction you can learn from. You notice the pattern, and then you change it—today, in small ways that actually stick.`
       : `Your streak is not a trophy. It’s evidence. It proves you can steer your attention, even when nobody is watching.`;
 
-  const body = `${name}, imagine this clearly. You are ${selfDescription}. You live in ${location}. You move through ${age} with grounded intent. Your ${gender} expression feels authentic, and ${hasKids} is held with care, not chaos.
+  const dynamicMomentA = hasMom
+    ? `In between calls, life reminds you why this matters. It is your mother’s birthday week, and you finalize a gift she once admired and never asked for. You do not overthink. You send it. Later, her voice note is soft, proud, and emotional.`
+    : `In between calls, life reminds you why this matters. You send a meaningful gift to someone who stood by you in your hardest season, and the reply carries the kind of gratitude money alone cannot buy.`;
+  const dynamicMomentB = hasKidsFlow
+    ? `By evening, you keep your promise to your kids and step out for an outing that feels fully present. No rushing, no distracted scrolling. Just laughter, stories, and time you can actually give.`
+    : hasPartner
+      ? `By evening, there is a date plan waiting without drama. You are present, relaxed, and generous with attention. Success does not make you distant. It makes you available to what matters.`
+      : hasFriends
+        ? `By evening, friends gather for a relaxed plan already booked. It might be a yacht day, a coastal drive, or dinner with a skyline view. The point is simple: joy now fits in your life naturally.`
+        : `By evening, you plan a short luxury break with people you care about. Details get handled fast because your systems and finances are finally aligned with the life you imagined.`;
 
-At work, in ${workRole}, you no longer drift. Even when it feels like ${workFeeling}, you return to structure. You remember what you built recently—${recentBuild}—and you use it as evidence that momentum is real.
+  const body = `${name}, imagine this clearly. It’s a real day in your future life. You are ${selfDescription}. You live in ${location}. You move through ${age} with grounded intent. Your ${gender} expression feels authentic, and ${hasKids} is held with care, not chaos.
 
-Picture your mornings in a life that matches what you described: ${tags}. Your ${zodiac} nature shapes your pace—you notice the urge to escape, and you stay present just long enough to move. You lead with ${traits}, not as a performance, but as a natural response to the person you’re becoming.
+You wake up in a space that feels like relief. Light spills across a clean surface. A glass of water waits where you always leave it. Your phone is already full, but it doesn’t own you. You choose the first ten minutes. You breathe. You stretch. You feel the quiet power in your chest that comes from doing this enough times.
 
-What you want most—${manifestation}—stops feeling like a wish and starts feeling like a direction. And the reason it matters—${whyImportant}—becomes your anchor when the day tries to pull you back into old habits. Even when fear shows up—${fears}—or you feel ${currentStruggle}, you don’t debate it. You answer with the next right step, the one you can repeat.
+Your morning looks like the life you asked for—${tags}. Not flashy. Just unmistakably higher quality. You move with ${traits}. You notice the impulse to rush, and you choose precision instead. The city air feels different when you’re not trying to prove anything.
 
-In love, your standards are quiet but clear. With ${relationship} energy, you don’t chase reassurance—you create safety. A partner who matches ${partner} feels close in the small moments: the check-in that doesn’t feel forced, the presence that doesn’t try to fix, the warmth that feels earned.
+Midday is busy. The kind of busy you once thought you could never hold. In ${workRole}, you’re the person people wait for before they decide. Your calendar has weight. Your work has consequences. You enter a meeting and the room settles without you asking. You speak with calm, and it lands. Money is handled like logistics now, not like emotion. You see it in the small choices: you don’t bargain with your standards. You don’t delay the hard call. You move.
+
+${dynamicMomentA}
+
+${dynamicMomentB}
+
+What you want most—${manifestation}—stops feeling like a wish and starts feeling like a direction. Even when fear shows up—${fears}—you don’t debate it. You answer with the next right step, the one you can repeat.
+
+Evening slows the day down without collapsing it. In love, your standards are quiet but clear. With ${relationship} energy, you don’t chase reassurance—you create safety. A partner who matches ${partner} feels close in the small moments: the check-in that doesn’t feel forced, the presence that doesn’t try to fix, the warmth that feels earned.
 
 And in the place you want to settle—${settlement}—your life has a rhythm. You can hear it in the city air, feel it in your body, and sense it in your choices: steady, deliberate, and yours. The people who matter most—${importantPeople}—feel that shift in you before you say a word.
 
 Even the chapter that shaped you—${shapingEvent}—is no longer just pain to carry. It becomes wisdom you walk with.
 
-When doubt rises, you breathe like someone who has practiced returning to center. Then you open your eyes and carry one scene with you—the sound of your future morning, the steadiness in your hands, and the subtle message that says: you’re already doing it.`;
+When doubt rises, you breathe like someone who has practiced returning to center. Then you open your eyes and carry one scene with you—the sound of your future morning, the steadiness in your hands, and the subtle message that says: you’re already doing it.
 
-  return [opener, behavior, body].join('\n\n');
+Now, when this ends, do one small real thing. Open your notes. Write one sentence: what matters today. Then set a 20-minute timer and start.`;
+
+  return normalizeNarrativeLength([opener, behavior, body].join('\n\n'));
 }
 
 const zodiacGuide: Record<string, string> = {
@@ -219,3 +267,33 @@ const zodiacGuide: Record<string, string> = {
   Pisces: 'imaginative, empathic, spiritual, creative flow with grounding',
   default: 'balanced, self-aware, focused and emotionally grounded',
 };
+
+function normalizeNarrativeLength(text: string): string {
+  const cleaned = text.replace(/\s+/g, ' ').trim();
+  const words = cleaned.split(' ').filter(Boolean);
+  if (words.length <= TARGET_MAX_WORDS) return cleaned;
+
+  const sentences = cleaned.match(/[^.!?]+[.!?]+/g) ?? [cleaned];
+  const kept: string[] = [];
+  let total = 0;
+
+  for (const sentence of sentences) {
+    const sentenceWords = sentence.trim().split(/\s+/).filter(Boolean).length;
+    if (total + sentenceWords > TARGET_MAX_WORDS) break;
+    kept.push(sentence.trim());
+    total += sentenceWords;
+  }
+
+  if (total < TARGET_MIN_WORDS && kept.length < sentences.length) {
+    for (let i = kept.length; i < sentences.length; i += 1) {
+      const sentence = sentences[i].trim();
+      const sentenceWords = sentence.split(/\s+/).filter(Boolean).length;
+      if (total + sentenceWords > TARGET_MAX_WORDS) break;
+      kept.push(sentence);
+      total += sentenceWords;
+      if (total >= TARGET_MIN_WORDS) break;
+    }
+  }
+
+  return kept.join(' ').trim() || cleaned;
+}

@@ -17,6 +17,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Speech from 'expo-speech';
 import * as Haptics from 'expo-haptics';
 import { Audio } from 'expo-av';
+import { Ionicons } from '@expo/vector-icons';
+import Slider from '@react-native-community/slider';
 import { GradientBackground } from '../components/GradientBackground';
 import { theme } from '../theme';
 import { useApp } from '../context/AppContext';
@@ -24,11 +26,14 @@ import type { RootStackParamList } from '../types';
 import { generateVisualizationNarrative } from '../services/ai';
 import { toneForBehavior } from '../services/feedback';
 import { dayKey } from '../services/tasks';
-import { ambienceUrl, pickAmbience } from '../services/ambience';
+import { ambienceSource, pickAmbience } from '../services/ambience';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Player'>;
 
 const SESSION_SECONDS = 4 * 60;
+
+type AmbienceChoice = 'off' | 'auto' | 'rain' | 'waves' | 'wind' | 'birds';
+const AMBIENCE_ORDER: AmbienceChoice[] = ['off', 'auto', 'rain', 'waves', 'wind', 'birds'];
 
 function splitSentences(text: string): string[] {
   const normalized = text.replace(/\n/g, ' ');
@@ -51,6 +56,9 @@ export default function PlayerScreen() {
   const [tone, setTone] = useState('neutral');
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [narrativeSource, setNarrativeSource] = useState<'groq' | 'fallback'>('fallback');
+  const [ambienceChoice, setAmbienceChoice] = useState<AmbienceChoice>('auto');
+  const [ambienceVolume, setAmbienceVolume] = useState(0.35);
+  const [ambienceError, setAmbienceError] = useState(false);
 
   const sentences = useMemo(() => splitSentences(narrative), [narrative]);
   const progress = sentences.length ? (currentIndex + 1) / sentences.length : 0;
@@ -63,6 +71,8 @@ export default function PlayerScreen() {
   const speechQueueIndex = useRef(0);
   const finishedRef = useRef(false);
   const ambienceRef = useRef<Audio.Sound | null>(null);
+  const isClosingRef = useRef(false);
+  const hasStartedSessionRef = useRef(false);
 
   useEffect(() => {
     Animated.loop(
@@ -84,6 +94,17 @@ export default function PlayerScreen() {
   }, [pulse]);
 
   useEffect(() => {
+    // Ensure device/browser audio can play under narration (including silent mode on iOS).
+    void Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+      staysActiveInBackground: false,
+      playsInSilentModeIOS: true,
+      shouldDuckAndroid: true,
+      playThroughEarpieceAndroid: false,
+    });
+  }, []);
+
+  useEffect(() => {
     Animated.timing(glow, {
       toValue: isSpeaking ? 1 : 0.42,
       duration: isSpeaking ? 220 : 420,
@@ -94,6 +115,8 @@ export default function PlayerScreen() {
 
   useEffect(() => {
     if (!profile) return;
+    if (hasStartedSessionRef.current) return;
+    hasStartedSessionRef.current = true;
     let cancelled = false;
     (async () => {
       const completed = todayTasks.filter((t) => t.isCompleted).length;
@@ -101,13 +124,13 @@ export default function PlayerScreen() {
       setTone(t);
       try {
         const result = await generateVisualizationNarrative(profile, t, dailyProgress);
-        if (cancelled) return;
+        if (cancelled || isClosingRef.current) return;
         setNarrative(result.text);
         setNarrativeSource(result.source);
         setPhase('playing');
         await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
       } catch {
-        if (cancelled) return;
+        if (cancelled || isClosingRef.current) return;
         setNarrative('');
         setNarrativeSource('fallback');
         setPhase('playing');
@@ -116,7 +139,7 @@ export default function PlayerScreen() {
     return () => {
       cancelled = true;
     };
-  }, [profile, dailyProgress, todayTasks]);
+  }, [profile, dailyProgress, todayTasks.length]);
 
   useEffect(() => {
     if (!profile) return;
@@ -125,6 +148,7 @@ export default function PlayerScreen() {
     let cancelled = false;
     (async () => {
       try {
+        setAmbienceError(false);
         // Stop any previous ambience.
         if (ambienceRef.current) {
           await ambienceRef.current.stopAsync();
@@ -132,11 +156,21 @@ export default function PlayerScreen() {
           ambienceRef.current = null;
         }
 
-        const kind = pickAmbience(profile);
-        const url = ambienceUrl(kind);
+        if (ambienceChoice === 'off') return;
+
+        const kind =
+          ambienceChoice === 'auto' ? pickAmbience(profile) : (ambienceChoice as Exclude<AmbienceChoice, 'off' | 'auto'>);
+        const source = ambienceSource(kind);
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          staysActiveInBackground: false,
+          playsInSilentModeIOS: true,
+          shouldDuckAndroid: true,
+          playThroughEarpieceAndroid: false,
+        });
         const { sound } = await Audio.Sound.createAsync(
-          { uri: url },
-          { isLooping: true, volume: 0.18, shouldPlay: true }
+          source,
+          { isLooping: true, volume: ambienceVolume, shouldPlay: true }
         );
         if (cancelled) {
           await sound.unloadAsync();
@@ -144,14 +178,28 @@ export default function PlayerScreen() {
         }
         ambienceRef.current = sound;
       } catch {
-        // If ambience fails (network/web/autoplay), we still allow narration to proceed.
+        // If ambience fails (network/web/autoplay), narration continues and we show a subtle hint.
+        setAmbienceError(true);
+        console.warn('[Ascend][Ambience] Failed to play selected ambience track.');
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [profile, phase]);
+  }, [profile, phase, ambienceChoice]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        if (ambienceRef.current) {
+          await ambienceRef.current.setVolumeAsync(ambienceVolume);
+        }
+      } catch {
+        // Ignore transient player update errors.
+      }
+    })();
+  }, [ambienceVolume]);
 
   useEffect(() => {
     if (phase !== 'playing' || sentences.length === 0 || voice) return;
@@ -254,13 +302,14 @@ export default function PlayerScreen() {
           rate: 0.95,
           volume: 1,
           onDone: () => {
+            if (isClosingRef.current) return;
             setIsSpeaking(false);
             void speakNext();
           },
           onError: () => {
             finishedRef.current = true;
             setIsSpeaking(false);
-            setPhase('done');
+            if (!isClosingRef.current) setPhase('done');
           },
         });
       };
@@ -301,6 +350,12 @@ export default function PlayerScreen() {
   const currentSentence = sentences[currentIndex] ?? '';
 
   const close = () => {
+    isClosingRef.current = true;
+    finishedRef.current = true;
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
     Speech.stop();
     setIsSpeaking(false);
     void (async () => {
@@ -312,7 +367,7 @@ export default function PlayerScreen() {
         }
       } catch {}
     })();
-    navigation.goBack();
+    navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
   };
 
   if (!profile) {
@@ -327,6 +382,15 @@ export default function PlayerScreen() {
       </GradientBackground>
     );
   }
+
+  const ambienceLabel =
+    ambienceChoice === 'off'
+      ? 'Off'
+      : ambienceChoice === 'auto'
+        ? 'Auto'
+        : ambienceChoice === 'wind'
+          ? 'Breeze'
+          : ambienceChoice.charAt(0).toUpperCase() + ambienceChoice.slice(1);
 
   return (
     <GradientBackground>
@@ -344,6 +408,41 @@ export default function PlayerScreen() {
             </View>
           </View>
           <Switch value={voice} onValueChange={setVoice} trackColor={{ false: '#333', true: theme.accentCyan }} />
+        </View>
+
+        <View style={styles.ambienceRow}>
+          <Pressable
+            style={({ pressed }) => [styles.ambiencePill, pressed && { opacity: 0.88 }]}
+            onPress={() => {
+              const idx = AMBIENCE_ORDER.indexOf(ambienceChoice);
+              const next = AMBIENCE_ORDER[(idx + 1) % AMBIENCE_ORDER.length] ?? 'auto';
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setAmbienceChoice(next);
+            }}
+          >
+            <Ionicons name="musical-notes-outline" size={18} color={theme.textSecondary} />
+            <Text style={styles.ambienceText}>Ambience: {ambienceLabel}</Text>
+          </Pressable>
+          {ambienceError && ambienceChoice !== 'off' && (
+            <Text style={styles.ambienceHint}>Ambience unavailable on this network/device right now.</Text>
+          )}
+          {ambienceChoice !== 'off' && (
+            <View style={styles.volumeRow}>
+              <Text style={styles.volumeLabel}>Volume</Text>
+              <Slider
+                style={styles.volumeSlider}
+                minimumValue={0}
+                maximumValue={1}
+                step={0.05}
+                value={ambienceVolume}
+                onValueChange={setAmbienceVolume}
+                minimumTrackTintColor={theme.accentCyan}
+                maximumTrackTintColor="rgba(109,59,255,0.18)"
+                thumbTintColor={theme.textPrimary}
+              />
+              <Text style={styles.volumeValue}>{Math.round(ambienceVolume * 100)}%</Text>
+            </View>
+          )}
         </View>
 
         <View style={styles.orbWrap}>
@@ -413,6 +512,46 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     marginBottom: 8,
+  },
+  ambienceRow: {
+    paddingHorizontal: 16,
+    alignItems: 'flex-start',
+    marginBottom: 6,
+  },
+  ambiencePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.65)',
+    borderWidth: 1,
+    borderColor: 'rgba(109,59,255,0.18)',
+  },
+  ambienceText: { color: theme.textSecondary, fontSize: 13, fontWeight: '600' },
+  ambienceHint: {
+    marginTop: 6,
+    color: theme.textSecondary,
+    fontSize: 12,
+    opacity: 0.9,
+  },
+  volumeRow: {
+    marginTop: 8,
+    width: '100%',
+    paddingRight: 6,
+  },
+  volumeLabel: {
+    color: theme.textSecondary,
+    fontSize: 12,
+    marginBottom: 2,
+  },
+  volumeSlider: { width: '100%', height: 30 },
+  volumeValue: {
+    alignSelf: 'flex-end',
+    color: theme.textSecondary,
+    fontSize: 11,
+    marginTop: -2,
   },
   iconBtn: {
     width: 44,
@@ -487,11 +626,18 @@ const styles = StyleSheet.create({
   primaryBtn: {
     marginHorizontal: 20,
     marginBottom: 16,
-    backgroundColor: theme.accentViolet,
+    backgroundColor: 'rgba(255,255,255,0.46)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.65)',
     paddingVertical: 14,
     borderRadius: 999,
     alignItems: 'center',
+    shadowColor: '#2f1f6b',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 18,
+    elevation: 4,
   },
-  primaryBtnText: { color: '#fff', fontSize: 17, fontWeight: '600' },
+  primaryBtnText: { color: theme.textPrimary, fontSize: 17, fontWeight: '700' },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 16 },
 });
