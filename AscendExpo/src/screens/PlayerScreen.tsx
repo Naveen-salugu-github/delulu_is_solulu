@@ -17,6 +17,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Speech from 'expo-speech';
 import * as Haptics from 'expo-haptics';
 import { Audio } from 'expo-av';
+import { Ionicons } from '@expo/vector-icons';
 import { GradientBackground } from '../components/GradientBackground';
 import { theme } from '../theme';
 import { useApp } from '../context/AppContext';
@@ -29,6 +30,9 @@ import { ambienceUrl, pickAmbience } from '../services/ambience';
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Player'>;
 
 const SESSION_SECONDS = 4 * 60;
+
+type AmbienceChoice = 'off' | 'auto' | 'rain' | 'waves' | 'wind' | 'birds';
+const AMBIENCE_ORDER: AmbienceChoice[] = ['off', 'auto', 'rain', 'waves', 'wind', 'birds'];
 
 function splitSentences(text: string): string[] {
   const normalized = text.replace(/\n/g, ' ');
@@ -51,6 +55,7 @@ export default function PlayerScreen() {
   const [tone, setTone] = useState('neutral');
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [narrativeSource, setNarrativeSource] = useState<'groq' | 'fallback'>('fallback');
+  const [ambienceChoice, setAmbienceChoice] = useState<AmbienceChoice>('auto');
 
   const sentences = useMemo(() => splitSentences(narrative), [narrative]);
   const progress = sentences.length ? (currentIndex + 1) / sentences.length : 0;
@@ -132,7 +137,10 @@ export default function PlayerScreen() {
           ambienceRef.current = null;
         }
 
-        const kind = pickAmbience(profile);
+        if (ambienceChoice === 'off') return;
+
+        const kind =
+          ambienceChoice === 'auto' ? pickAmbience(profile) : (ambienceChoice as Exclude<AmbienceChoice, 'off' | 'auto'>);
         const url = ambienceUrl(kind);
         const { sound } = await Audio.Sound.createAsync(
           { uri: url },
@@ -151,7 +159,7 @@ export default function PlayerScreen() {
     return () => {
       cancelled = true;
     };
-  }, [profile, phase]);
+  }, [profile, phase, ambienceChoice]);
 
   useEffect(() => {
     if (phase !== 'playing' || sentences.length === 0 || voice) return;
@@ -328,6 +336,15 @@ export default function PlayerScreen() {
     );
   }
 
+  const ambienceLabel =
+    ambienceChoice === 'off'
+      ? 'Off'
+      : ambienceChoice === 'auto'
+        ? 'Auto'
+        : ambienceChoice === 'wind'
+          ? 'Breeze'
+          : ambienceChoice.charAt(0).toUpperCase() + ambienceChoice.slice(1);
+
   return (
     <GradientBackground>
       <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
@@ -344,6 +361,21 @@ export default function PlayerScreen() {
             </View>
           </View>
           <Switch value={voice} onValueChange={setVoice} trackColor={{ false: '#333', true: theme.accentCyan }} />
+        </View>
+
+        <View style={styles.ambienceRow}>
+          <Pressable
+            style={({ pressed }) => [styles.ambiencePill, pressed && { opacity: 0.88 }]}
+            onPress={() => {
+              const idx = AMBIENCE_ORDER.indexOf(ambienceChoice);
+              const next = AMBIENCE_ORDER[(idx + 1) % AMBIENCE_ORDER.length] ?? 'auto';
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setAmbienceChoice(next);
+            }}
+          >
+            <Ionicons name="musical-notes-outline" size={18} color={theme.textSecondary} />
+            <Text style={styles.ambienceText}>Ambience: {ambienceLabel}</Text>
+          </Pressable>
         </View>
 
         <View style={styles.orbWrap}>
@@ -414,6 +446,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 8,
   },
+  ambienceRow: {
+    paddingHorizontal: 16,
+    alignItems: 'flex-start',
+    marginBottom: 6,
+  },
+  ambiencePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.65)',
+    borderWidth: 1,
+    borderColor: 'rgba(109,59,255,0.18)',
+  },
+  ambienceText: { color: theme.textSecondary, fontSize: 13, fontWeight: '600' },
   iconBtn: {
     width: 44,
     height: 44,

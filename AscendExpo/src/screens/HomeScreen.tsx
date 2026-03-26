@@ -16,7 +16,7 @@ type Nav = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 
 export default function HomeScreen() {
   const navigation = useNavigation<Nav>();
-  const { userProfile, dailyProgress, todayTasks, refreshTasksIfNeeded, toggleTask } = useApp();
+  const { userProfile, dailyProgress, refreshTasksIfNeeded } = useApp();
 
   const message = useMemo(
     () => futureSelfMessage(dailyProgress, userProfile?.futureSelf ?? null),
@@ -30,7 +30,6 @@ export default function HomeScreen() {
   const hour = new Date().getHours();
   const greet =
     hour < 12 ? 'Good morning.' : hour < 17 ? 'Good afternoon.' : 'Good evening.';
-  const done = todayTasks.filter((t) => t.isCompleted).length;
 
   return (
     <GradientBackground>
@@ -56,33 +55,6 @@ export default function HomeScreen() {
             >
               <Text style={styles.primaryBtnText}>Begin session</Text>
             </Pressable>
-          </GlassCard>
-
-          <GlassCard style={styles.card}>
-            <View style={styles.rowBetween}>
-              <Text style={styles.cardTitle}>Reality alignment</Text>
-              <Text style={styles.badge}>
-                {done}/{todayTasks.length}
-              </Text>
-            </View>
-            <Text style={styles.cardBody}>Small moves that bend the arc of your week.</Text>
-            {todayTasks.map((task) => (
-              <Pressable
-                key={task.id}
-                style={styles.taskRow}
-                onPress={() => void toggleTask(task.id)}
-              >
-                <Ionicons
-                  name={task.isCompleted ? 'checkmark-circle' : 'ellipse-outline'}
-                  size={26}
-                  color={task.isCompleted ? theme.accentCyan : theme.textSecondary}
-                />
-                <View style={styles.taskText}>
-                  <Text style={styles.taskTitle}>{task.title}</Text>
-                  <Text style={styles.taskDetail}>{task.detail}</Text>
-                </View>
-              </Pressable>
-            ))}
           </GlassCard>
 
           <GlassCard style={styles.card}>
