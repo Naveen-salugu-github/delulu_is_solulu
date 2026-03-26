@@ -6,6 +6,9 @@ export type NarrativeResult = {
   source: NarrativeSource;
 };
 
+const TARGET_MIN_WORDS = 520;
+const TARGET_MAX_WORDS = 650;
+
 function buildPrompt(
   profile: FutureSelfProfile,
   tone: NarrativeToneKind,
@@ -17,14 +20,10 @@ function buildPrompt(
   const age = profile.age != null ? `${profile.age}` : 'not shared';
   const kids = profile.hasKids ?? 'not shared';
   const workRole = profile.workRole ?? 'not shared';
-  const workFeeling = profile.workFeeling ?? 'not shared';
-  const recentBuild = profile.recentBuild ?? 'not shared';
   const selfDesc = profile.selfDescription ?? 'not shared';
   const shapingEvent = profile.shapingEvent ?? 'not shared';
-  const struggle = profile.currentStruggle ?? 'not shared';
   const importantPeople = profile.mostImportantPeople ?? 'not shared';
   const manifestation = profile.manifestation ?? 'not shared';
-  const whyImportant = profile.whyImportant ?? 'not shared';
 
   const goals = profile.goals.join(', ');
   const income = `₹ annual target ${Math.round(profile.incomeTargetAnnualINR)}`;
@@ -37,7 +36,7 @@ function buildPrompt(
   const partnerTraits = (profile.idealPartnerTraits ?? []).join(', ') || 'not shared';
   const settlementVision = profile.settlementVision ?? 'not shared';
 
-  return `You are a premium visualization coach. Generate a vivid second-person narrative designed to be ~4 minutes spoken aloud (roughly 520–650 words) for someone building their future self in India.
+  return `You are a premium visualization coach. Generate a vivid second-person narrative designed to be exactly one immersive 4-minute session (target 520-650 words, never exceed 650) for someone building their future self in India.
 
 Tone mode: ${tone}
 
@@ -46,6 +45,7 @@ The user’s inputs below are for internal grounding only. Do not echo them as a
 Guidance:
 - Second person POV: use “you”.
 - Start immediately inside a sensory scene the user can inhabit (no long preface). Within the first 2–3 sentences, anchor: place, time of day, body sensation, one concrete object.
+- The script should feel time-guided: opening arrival, deepening focus, and grounded closeout for immediate action after this 4-minute session.
 - Make the narrative feel like the future self is speaking with subtle reassurance and specific, emotionally grounded details.
 - Use zodiac to shape communication rhythm and micro-behavior (pace, emphasis, tone), but do NOT mention “your zodiac sign” explicitly or rely on stereotypes.
 - Use money/lifestyle/relationship/settlement details to create lived sensory scenes (morning routine, work sessions, partner moments, city atmosphere).
@@ -53,6 +53,8 @@ Guidance:
 - Avoid guarantees of outcomes. Keep it grounded and realistic.
 - No bullet points. Paragraphs only. No headings. No quotes used as formatting.
 - Keep sentence structure suitable for subtitles and TTS: clear sentence endings, not extremely long sentences.
+- Use mostly present tense. Keep momentum words active and embodied (breathe, notice, choose, move, return, commit).
+- End with a short present-tense lock-in: one concrete action the user will take right after this session.
 
 User inputs (internal use only):
 - Preferred name to use in voice: ${name}
@@ -61,14 +63,10 @@ User inputs (internal use only):
 - Age: ${age}
 - Kids: ${kids}
 - Work: ${workRole}
-- Feelings about work: ${workFeeling}
-- Recently built: ${recentBuild}
 - Self description: ${selfDesc}
 - Shaping experience: ${shapingEvent}
-- Current struggle: ${struggle}
 - Most important people: ${importantPeople}
 - What they want most (manifestation): ${manifestation}
-- Why it matters: ${whyImportant}
 - Life focus areas: ${goals}
 - Income target: ${income}
 - Lifestyle vision tags: ${lifestyle}
@@ -95,7 +93,12 @@ export async function generateVisualizationNarrative(
   metrics: DailyProgress
 ): Promise<NarrativeResult> {
   const groqKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
-  if (!groqKey) return { text: localFallback(profile, tone, metrics), source: 'fallback' };
+  if (!groqKey) {
+    return {
+      text: normalizeNarrativeLength(localFallback(profile, tone, metrics)),
+      source: 'fallback',
+    };
+  }
 
   const baseURL = 'https://api.groq.com/openai/v1/chat/completions';
   // Groq deprecated `llama3-8b-8192`; recommended replacement is `llama-3.1-8b-instant`.
@@ -139,8 +142,13 @@ export async function generateVisualizationNarrative(
     choices?: { message?: { content?: string } }[];
   };
   const text = data.choices?.[0]?.message?.content?.trim();
-  if (!text) return { text: localFallback(profile, tone, metrics), source: 'fallback' };
-  return { text, source: 'groq' };
+  if (!text) {
+    return {
+      text: normalizeNarrativeLength(localFallback(profile, tone, metrics)),
+      source: 'fallback',
+    };
+  }
+  return { text: normalizeNarrativeLength(text), source: 'groq' };
 }
 
 function localFallback(
@@ -154,11 +162,8 @@ function localFallback(
   const age = profile.age != null ? `${profile.age}` : 'this season of life';
   const hasKids = profile.hasKids?.trim() || 'your family reality';
   const workRole = profile.workRole?.trim() || 'your current work';
-  const workFeeling = profile.workFeeling?.trim() || 'mixed feelings';
-  const recentBuild = profile.recentBuild?.trim() || 'small proof of momentum';
   const selfDescription = profile.selfDescription?.trim() || 'someone learning to trust their own pace';
   const shapingEvent = profile.shapingEvent?.trim() || 'a hard chapter that taught resilience';
-  const currentStruggle = profile.currentStruggle?.trim() || 'old patterns that still pull at times';
   const importantPeople = profile.mostImportantPeople?.trim() || 'the people you love';
   const focus = profile.goals.join(', ');
   const tags = profile.lifestyleTags.join(', ');
@@ -169,7 +174,6 @@ function localFallback(
   const partner = (profile.idealPartnerTraits ?? []).join(', ') || 'supportive and aligned';
   const settlement = profile.settlementVision ?? 'a city that expands your growth';
   const manifestation = profile.manifestation ?? `${focus}—the version of you that finally feels inevitable`;
-  const whyImportant = profile.whyImportant ?? 'because you are done living below your potential';
 
   const opener =
     tone === 'empowering'
@@ -187,11 +191,11 @@ function localFallback(
 
   const body = `${name}, imagine this clearly. You are ${selfDescription}. You live in ${location}. You move through ${age} with grounded intent. Your ${gender} expression feels authentic, and ${hasKids} is held with care, not chaos.
 
-At work, in ${workRole}, you no longer drift. Even when it feels like ${workFeeling}, you return to structure. You remember what you built recently—${recentBuild}—and you use it as evidence that momentum is real.
+At work, in ${workRole}, you no longer drift. You return to structure, and your standards rise quietly in the things only you notice.
 
 Picture your mornings in a life that matches what you described: ${tags}. Your ${zodiac} nature shapes your pace—you notice the urge to escape, and you stay present just long enough to move. You lead with ${traits}, not as a performance, but as a natural response to the person you’re becoming.
 
-What you want most—${manifestation}—stops feeling like a wish and starts feeling like a direction. And the reason it matters—${whyImportant}—becomes your anchor when the day tries to pull you back into old habits. Even when fear shows up—${fears}—or you feel ${currentStruggle}, you don’t debate it. You answer with the next right step, the one you can repeat.
+What you want most—${manifestation}—stops feeling like a wish and starts feeling like a direction. Even when fear shows up—${fears}—you don’t debate it. You answer with the next right step, the one you can repeat.
 
 In love, your standards are quiet but clear. With ${relationship} energy, you don’t chase reassurance—you create safety. A partner who matches ${partner} feels close in the small moments: the check-in that doesn’t feel forced, the presence that doesn’t try to fix, the warmth that feels earned.
 
@@ -201,7 +205,7 @@ Even the chapter that shaped you—${shapingEvent}—is no longer just pain to c
 
 When doubt rises, you breathe like someone who has practiced returning to center. Then you open your eyes and carry one scene with you—the sound of your future morning, the steadiness in your hands, and the subtle message that says: you’re already doing it.`;
 
-  return [opener, behavior, body].join('\n\n');
+  return normalizeNarrativeLength([opener, behavior, body].join('\n\n'));
 }
 
 const zodiacGuide: Record<string, string> = {
@@ -219,3 +223,33 @@ const zodiacGuide: Record<string, string> = {
   Pisces: 'imaginative, empathic, spiritual, creative flow with grounding',
   default: 'balanced, self-aware, focused and emotionally grounded',
 };
+
+function normalizeNarrativeLength(text: string): string {
+  const cleaned = text.replace(/\s+/g, ' ').trim();
+  const words = cleaned.split(' ').filter(Boolean);
+  if (words.length <= TARGET_MAX_WORDS) return cleaned;
+
+  const sentences = cleaned.match(/[^.!?]+[.!?]+/g) ?? [cleaned];
+  const kept: string[] = [];
+  let total = 0;
+
+  for (const sentence of sentences) {
+    const sentenceWords = sentence.trim().split(/\s+/).filter(Boolean).length;
+    if (total + sentenceWords > TARGET_MAX_WORDS) break;
+    kept.push(sentence.trim());
+    total += sentenceWords;
+  }
+
+  if (total < TARGET_MIN_WORDS && kept.length < sentences.length) {
+    for (let i = kept.length; i < sentences.length; i += 1) {
+      const sentence = sentences[i].trim();
+      const sentenceWords = sentence.split(/\s+/).filter(Boolean).length;
+      if (total + sentenceWords > TARGET_MAX_WORDS) break;
+      kept.push(sentence);
+      total += sentenceWords;
+      if (total >= TARGET_MIN_WORDS) break;
+    }
+  }
+
+  return kept.join(' ').trim() || cleaned;
+}
