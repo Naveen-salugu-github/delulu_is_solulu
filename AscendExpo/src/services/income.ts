@@ -1,7 +1,8 @@
 export function incomeFromSlider(t: number): number {
   const clamped = Math.min(1, Math.max(0, t));
   const minAnnual = 50_000 * 12;
-  const maxAnnual = 10 * 10_000_000;
+  // Upper limit: 1000 crores/year
+  const maxAnnual = 1000 * 10_000_000;
   const logMin = Math.log(minAnnual);
   const logMax = Math.log(maxAnnual);
   return Math.exp(logMin + clamped * (logMax - logMin));

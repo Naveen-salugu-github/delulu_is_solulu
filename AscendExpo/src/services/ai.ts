@@ -20,39 +20,43 @@ function buildPrompt(
   const partnerTraits = (profile.idealPartnerTraits ?? []).join(', ') || 'not shared';
   const settlementVision = profile.settlementVision ?? 'not shared';
 
-  return `You are an expert visualization coach. Generate a vivid second-person visualization narrative for a user in India building their future self.
+  return `You are a premium visualization coach. Generate a vivid second-person narrative (800–1200 words) for someone building their future self in India.
 
-User Profile:
+Tone mode: ${tone}
+
+The user’s inputs below are for internal grounding only. Do not echo them as a list. Do not sound like you are reading answers back. Instead, write as if their future is already reachable and their habits are already in motion.
+
+Guidance:
+- Second person POV: use “you”.
+- Make the narrative feel like the future self is speaking with subtle reassurance and specific, emotionally grounded details.
+- Use zodiac to shape communication rhythm and micro-behavior (pace, emphasis, tone), but do NOT mention “your zodiac sign” explicitly or rely on stereotypes.
+- Use money/lifestyle/relationship/settlement details to create lived sensory scenes (morning routine, work sessions, partner moments, city atmosphere).
+- If tone is confrontational, reference skipped days in a compassionate but direct way (“You remember the day you almost quit, and you didn’t.”). Still end with a path forward.
+- Avoid guarantees of outcomes. Keep it grounded and realistic.
+- No bullet points. Paragraphs only. No headings. No quotes used as formatting.
+- Keep sentence structure suitable for subtitles and TTS: clear sentence endings, not extremely long sentences.
+
+User inputs (internal use only):
 - Life focus areas: ${goals}
-- Income aspiration: ${income}
+- Income target: ${income}
 - Current income baseline: ${currentIncome}
-- Current money path: ${moneyMethod}
+- Money path: ${moneyMethod}
 - Lifestyle vision tags: ${lifestyle}
 - Personality traits to amplify: ${traits}
-- Current friction / fears: ${fears}
-- Zodiac sign: ${zodiac}
-- Zodiac guidance: ${zodiacStyle}
+- Friction / fears: ${fears}
+- Zodiac (internal rhythm): ${zodiac}
+- Zodiac guidance (internal): ${zodiacStyle}
 - Relationship status: ${relationshipStatus}
 - Ideal partner traits: ${partnerTraits}
 - Settlement vision: ${settlementVision}
 
-Behavioral context:
+Behavioral context (use to adapt tone, not to list data):
 - Streak days: ${metrics.streakDays}
 - Missed days: ${metrics.missedDays}
 - Session listens: ${metrics.sessionListens}
 - Tasks completed (signal): ${metrics.dailyTasksCompleted}
 
-Required narrative tone mode: ${tone}
-
-Rules:
-- Second person POV ("you").
-- Immersive sensory descriptions.
-- Realistic timeline.
-- Match communication style to zodiac guidance, but avoid stereotypes.
-- Length: 800–1200 words.
-- Paragraphs only, no bullet points.
-
-Return only the narrative text.`;
+Return ONLY the narrative text.`;
 }
 
 export async function generateVisualizationNarrative(
@@ -60,22 +64,23 @@ export async function generateVisualizationNarrative(
   tone: NarrativeToneKind,
   metrics: DailyProgress
 ): Promise<string> {
-  const apiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
-  if (!apiKey) {
-    return localFallback(profile, tone, metrics);
-  }
+  const groqKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
+  if (!groqKey) return localFallback(profile, tone, metrics);
 
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+  const baseURL = 'https://api.groq.com/openai/v1/chat/completions';
+  const model = process.env.EXPO_PUBLIC_GROQ_MODEL ?? 'llama3-8b-8192';
+
+  const res = await fetch(baseURL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${groqKey}`,
     },
     body: JSON.stringify({
-      model: 'gpt-4o-mini',
+      model,
       temperature: 0.85,
       messages: [
-        { role: 'system', content: 'You write cinematic, grounded visualization narratives.' },
+        { role: 'system', content: 'You write cinematic, grounded visualization narratives for premium consumer wellness apps.' },
         { role: 'user', content: buildPrompt(profile, tone, metrics) },
       ],
     }),
@@ -107,21 +112,37 @@ function localFallback(
   const partner = (profile.idealPartnerTraits ?? []).join(', ') || 'supportive and aligned';
   const settlement = profile.settlementVision ?? 'a city that expands your growth';
   const moneyPath = profile.incomeMethod ?? 'a path that compounds your strengths';
+  const currentIncome =
+    profile.currentIncomeMonthlyINR != null
+      ? `₹${Math.round(profile.currentIncomeMonthlyINR).toLocaleString('en-IN')} per month`
+      : 'steady income that keeps you safe';
+  const incomeTarget = profile.incomeTargetAnnualINR
+    ? `your target that feels inevitable`
+    : 'a generational horizon';
 
   const opener =
     tone === 'empowering'
-      ? `You breathe in and the air feels like proof: the version of you that focuses on ${focus} is not a fantasy—she is a direction your nervous system already knows.`
+      ? `You wake up and the air feels different—like a quiet agreement you kept. The life you’ve been aiming at is already forming in your routines, and you can feel it in the steadiness of your breath.`
       : tone === 'confrontational'
-        ? 'You know the old pattern: the quiet negotiation with your future when the day gets loud. Today we do not negotiate. You listen to what you avoided—and you move anyway.'
+        ? `You remember the days you almost quit. Not dramatically. Just quietly. And you feel the moment you chose discipline anyway—because you are not here to bargain with yourself anymore.`
         : tone === 'supportive'
-          ? 'If you have been hard on yourself lately, start here: you are still in the story. The life you want is built from small returns, not perfect weeks.'
-          : 'Close your eyes for a moment. Let the room soften. You are about to walk forward in your mind the way you want to walk forward in your days.';
+          ? `If today felt heavier than you expected, you don’t punish yourself. You return gently—because the future you want is built from repairs, not from perfect straight lines.`
+          : `Close your eyes. The room softens. You step forward in your mind with the same calm you bring to your real life—one honest action at a time.`;
 
-  const behavior = `Your streak reads ${metrics.streakDays} days of showing up. Missed days (${metrics.missedDays}) are not a verdict; they are information about friction, not identity.`;
+  const behavior =
+    metrics.missedDays > 0
+      ? `Missed days aren’t a verdict. They’re friction you can learn from. You notice the pattern, and then you change it—today, in small ways that actually stick.`
+      : `Your streak is not a trophy. It’s evidence. It proves you can steer your attention, even when nobody is watching.`;
 
-  const body = `Picture your mornings in a life that matches what you described: ${tags}. Your ${zodiac} nature keeps your choices intentional instead of impulsive. You move with the traits you chose: ${traits}. Your money path becomes clearer through ${moneyPath}, and you keep your standards high in love: ${relationship}, with a partner who feels ${partner}. You are building toward ${settlement}. The world still asks hard questions, especially around ${fears}, but you answer with motion—small, repeatable, undeniable.
+  const body = `Picture your mornings in a life that matches what you described: ${tags}. Your ${zodiac} nature shapes your pace—you notice the urge to escape, and you stay present just long enough to move. You lead with ${traits}, not as a performance, but as a natural response to the person you’re becoming.
 
-When doubt rises, you breathe like someone who has practiced returning to center. By the time you open your eyes, carry one scene with you—the sound of your future morning, the steadiness in your hands.`;
+Your income doesn’t feel random now. It feels like something you cultivate—${currentIncome} right now, and a trajectory that keeps climbing toward ${incomeTarget}. Even when fear shows up—${fears}—you don’t debate it. You answer with the next right step, the one you can repeat.
+
+In love, your standards are quiet but clear. With ${relationship} energy, you don’t chase reassurance—you create safety. A partner who matches ${partner} feels close in the small moments: the check-in that doesn’t feel forced, the presence that doesn’t try to fix, the warmth that feels earned.
+
+And in the place you want to settle—${settlement}—your life has a rhythm. You can hear it in the city air, feel it in your body, and sense it in your choices: steady, deliberate, and yours.
+
+When doubt rises, you breathe like someone who has practiced returning to center. Then you open your eyes and carry one scene with you—the sound of your future morning, the steadiness in your hands, and the subtle message that says: you’re already doing it.`;
 
   return [opener, behavior, body].join('\n\n');
 }

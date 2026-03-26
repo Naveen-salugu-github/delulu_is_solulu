@@ -44,19 +44,21 @@ export default function PlayerScreen() {
 
   const [phase, setPhase] = useState<'loading' | 'playing' | 'done'>('loading');
   const [narrative, setNarrative] = useState('');
-  const [visibleCount, setVisibleCount] = useState(0);
-  const [voice, setVoice] = useState(false);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [voice, setVoice] = useState(true);
   const [tone, setTone] = useState('neutral');
   const [isSpeaking, setIsSpeaking] = useState(false);
 
   const sentences = useMemo(() => splitSentences(narrative), [narrative]);
-  const progress = sentences.length ? visibleCount / sentences.length : 0;
+  const progress = sentences.length ? (currentIndex + 1) / sentences.length : 0;
 
   const pulse = useRef(new Animated.Value(1)).current;
+  const respondScale = useRef(new Animated.Value(1)).current;
   const glow = useRef(new Animated.Value(0.42)).current;
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recorded = useRef(false);
   const speechQueueIndex = useRef(0);
+  const finishedRef = useRef(false);
 
   useEffect(() => {
     Animated.loop(
@@ -113,24 +115,26 @@ export default function PlayerScreen() {
   useEffect(() => {
     if (phase !== 'playing' || sentences.length === 0 || voice) return;
     const perMs = (SESSION_SECONDS * 1000 * 0.85) / Math.max(sentences.length, 1);
-    setVisibleCount(1);
+    if (timerRef.current) clearInterval(timerRef.current);
+    setCurrentIndex(0);
     setIsSpeaking(false);
     if (sentences.length <= 1) {
       setPhase('done');
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       return;
     }
-    let i = 1;
+    let i = 0;
     timerRef.current = setInterval(() => {
       i += 1;
-      setVisibleCount(i);
-      if (i === Math.floor(sentences.length / 3) || i === Math.floor((2 * sentences.length) / 3)) {
+      const nextIndex = Math.min(sentences.length - 1, i);
+      setCurrentIndex(nextIndex);
+      if (nextIndex === Math.floor(sentences.length / 3) || nextIndex === Math.floor((2 * sentences.length) / 3)) {
         void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       }
-      if (i > 0 && i % 5 === 0) {
+      if (nextIndex > 0 && nextIndex % 5 === 0) {
         void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       }
-      if (i >= sentences.length) {
+      if (nextIndex >= sentences.length - 1) {
         if (timerRef.current) clearInterval(timerRef.current);
         setIsSpeaking(false);
         setPhase('done');
@@ -149,48 +153,79 @@ export default function PlayerScreen() {
       return;
     }
     if (timerRef.current) clearInterval(timerRef.current);
+    finishedRef.current = false;
     speechQueueIndex.current = 0;
-    setVisibleCount(1);
+    setCurrentIndex(0);
 
-    const speakNext = async () => {
-      const idx = speechQueueIndex.current;
-      if (idx >= sentences.length) {
-        setIsSpeaking(false);
-        setPhase('done');
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        return;
-      }
-      const sentence = sentences[idx];
+    let preferredVoice: { identifier?: string; language?: string } | null = null;
+    (async () => {
       const voices = await Speech.getAvailableVoicesAsync();
-      const preferredVoice = voices.find(
-        (v) => v.language.startsWith('en-IN') && (v.quality === 'Enhanced' || v.quality === 'Default')
-      ) ?? voices.find((v) => v.language.startsWith('en-'));
+      preferredVoice =
+        voices.find(
+          (v) =>
+            v.language.startsWith('en-IN') &&
+            (v.quality === 'Enhanced' || v.quality === 'Default')
+        ) ?? voices.find((v) => v.language.startsWith('en-')) ?? voices[0] ?? null;
 
-      setIsSpeaking(true);
-      Speech.speak(sentence, {
-        language: preferredVoice?.language ?? 'en-IN',
-        voice: preferredVoice?.identifier,
-        pitch: 1,
-        rate: 0.97,
-        onDone: () => {
-          speechQueueIndex.current += 1;
-          const nextVisible = Math.min(sentences.length, speechQueueIndex.current + 1);
-          setVisibleCount(nextVisible);
-          if (nextVisible === Math.floor(sentences.length / 3) || nextVisible === Math.floor((2 * sentences.length) / 3)) {
-            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          }
-          if (nextVisible > 0 && nextVisible % 5 === 0) {
-            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          }
-          void speakNext();
-        },
-        onError: () => {
+      const speakNext = async () => {
+        if (finishedRef.current) return;
+        const idx = speechQueueIndex.current;
+        if (idx >= sentences.length) {
+          finishedRef.current = true;
           setIsSpeaking(false);
           setPhase('done');
-        },
-      });
-    };
-    void speakNext();
+          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          return;
+        }
+
+        setCurrentIndex(idx);
+        setIsSpeaking(true);
+
+        Animated.sequence([
+          Animated.timing(respondScale, {
+            toValue: 1.08,
+            duration: 140,
+            easing: Easing.out(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(respondScale, {
+            toValue: 1.0,
+            duration: 220,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+        ]).start();
+
+        if (idx === Math.floor(sentences.length / 3) || idx === Math.floor((2 * sentences.length) / 3)) {
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        }
+        if (idx > 0 && idx % 5 === 0) {
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }
+
+        speechQueueIndex.current = idx + 1;
+        const sentence = sentences[idx];
+
+        Speech.speak(sentence, {
+          language: preferredVoice?.language ?? 'en-IN',
+          voice: preferredVoice?.identifier,
+          pitch: 1.0,
+          rate: 0.95,
+          volume: 1,
+          onDone: () => {
+            setIsSpeaking(false);
+            void speakNext();
+          },
+          onError: () => {
+            finishedRef.current = true;
+            setIsSpeaking(false);
+            setPhase('done');
+          },
+        });
+      };
+
+      void speakNext();
+    })();
     return () => {
       setIsSpeaking(false);
       void Speech.stop();
@@ -215,7 +250,7 @@ export default function PlayerScreen() {
     })();
   }, [phase, dailyProgress, updateProgress, appendSession, tone]);
 
-  const visibleText = sentences.slice(0, visibleCount).join('\n\n');
+  const currentSentence = sentences[currentIndex] ?? '';
 
   const close = () => {
     Speech.stop();
@@ -248,7 +283,7 @@ export default function PlayerScreen() {
         </View>
 
         <View style={styles.orbWrap}>
-          <Animated.View style={{ transform: [{ scale: pulse }], opacity: glow }}>
+          <Animated.View style={{ transform: [{ scale: pulse }, { scale: respondScale }], opacity: glow }}>
             <LinearGradient
               colors={[`${theme.accentCyan}cc`, `${theme.accentViolet}99`, 'transparent']}
               style={styles.orb}
@@ -271,7 +306,7 @@ export default function PlayerScreen() {
 
         {(phase === 'playing' || phase === 'done') && (
           <ScrollView style={styles.textScroll} contentContainerStyle={styles.textContent}>
-            <Text style={styles.narrative}>{visibleText}</Text>
+            <Text style={styles.narrative}>{phase === 'playing' ? currentSentence : narrative}</Text>
           </ScrollView>
         )}
 
@@ -319,7 +354,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.65)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -345,7 +380,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 24,
     marginTop: 8,
     borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(109,59,255,0.10)',
     overflow: 'hidden',
   },
   progressFill: {

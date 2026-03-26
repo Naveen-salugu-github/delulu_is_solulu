@@ -35,12 +35,13 @@ Then:
 - For **Android emulator**: press `a` (with Android Studio installed).
 - **iOS Simulator** only works on **macOS** with Xcode; on Windows use a physical iPhone with Expo Go.
 
-## Optional: AI narrative (OpenAI)
+## Optional: AI narrative (Groq)
 
 Create a `.env` in this folder (Expo loads `EXPO_PUBLIC_*` at bundle time):
 
 ```env
-EXPO_PUBLIC_OPENAI_API_KEY=sk-your-key-here
+EXPO_PUBLIC_GROQ_API_KEY=groq_your_key_here
+EXPO_PUBLIC_GROQ_MODEL=llama3-8b-8192
 ```
 
 Restart `npx expo start` after changing env. Without a key, the app uses the built-in offline narrative.

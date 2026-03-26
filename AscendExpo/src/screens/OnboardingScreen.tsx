@@ -489,7 +489,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: 'rgba(255,255,255,0.62)',
     borderWidth: 1,
     borderColor: theme.glassStroke,
   },
@@ -497,13 +497,13 @@ const styles = StyleSheet.create({
     backgroundColor: `${theme.accentViolet}55`,
   },
   chipOnAlt: {
-    backgroundColor: `${theme.accentCyan}33`,
+    backgroundColor: `${theme.accentCyan}22`,
   },
   chipText: { color: theme.textPrimary, fontWeight: '600', fontSize: 14 },
   sliderCard: {
     padding: 18,
     borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: 'rgba(255,255,255,0.62)',
     borderWidth: 1,
     borderColor: theme.glassStroke,
     marginBottom: 8,
@@ -513,7 +513,7 @@ const styles = StyleSheet.create({
   input: {
     borderWidth: 1,
     borderColor: theme.glassStroke,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: 'rgba(255,255,255,0.62)',
     borderRadius: 14,
     color: theme.textPrimary,
     paddingHorizontal: 14,
@@ -522,7 +522,7 @@ const styles = StyleSheet.create({
   summary: {
     padding: 18,
     borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: 'rgba(255,255,255,0.62)',
     borderWidth: 1,
     borderColor: theme.glassStroke,
   },

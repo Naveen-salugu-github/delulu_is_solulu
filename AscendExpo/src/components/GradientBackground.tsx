@@ -7,8 +7,8 @@ export function GradientBackground({ children }: { children: React.ReactNode }) 
   return (
     <View style={styles.root}>
       <LinearGradient
-        colors={[theme.bgTop, '#2a1a4a', theme.bgMid, `${theme.accentViolet}33`]}
-        locations={[0, 0.35, 0.7, 1]}
+        colors={[theme.bgTop, theme.bgMid, `${theme.accentViolet}25`, theme.accentCyan+'12']}
+        locations={[0, 0.45, 0.75, 1]}
         style={StyleSheet.absoluteFill}
       />
       {children}
