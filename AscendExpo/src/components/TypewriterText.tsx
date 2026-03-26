@@ -23,6 +23,11 @@ export function TypewriterText({
   ...rest
 }: Props) {
   const [shown, setShown] = React.useState('');
+  const onDoneRef = React.useRef<Props['onDone']>(onDone);
+
+  React.useEffect(() => {
+    onDoneRef.current = onDone;
+  }, [onDone]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -41,14 +46,14 @@ export function TypewriterText({
         // eslint-disable-next-line no-await-in-loop
         await new Promise((r) => setTimeout(r, delay));
       }
-      if (!cancelled) onDone?.();
+      if (!cancelled) onDoneRef.current?.();
     };
 
     void run();
     return () => {
       cancelled = true;
     };
-  }, [text, speedMs, startDelayMs, onDone]);
+  }, [text, speedMs, startDelayMs]);
 
   return (
     <Text {...rest}>
