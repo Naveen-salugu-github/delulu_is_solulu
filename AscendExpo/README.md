@@ -18,6 +18,17 @@ npm run start
 
 Use **`npm run start`** (not a bare `expo` command). If `npx expo start` fails with `'expo' is not recognized`, your PATH is fine—`npm` runs the local CLI from `node_modules`. The scripts in `package.json` call Expo via `node` so they work without a global `expo` install.
 
+## Tri-platform testing (web + Android + iOS)
+
+- **Web UI (desktop browser):** `npm run web`
+- **Web UI on iPhone Safari:** `npm run web:lan`, then open `http://<your-pc-local-ip>:8083` on iPhone (same Wi-Fi)
+- **Android emulator/device (native):** `npm run android`
+- **iPhone native (Expo Go):** `npm run start` and scan QR from Expo Go app
+
+Notes:
+- iPhone Safari tests the **web build** (React Native Web), not native iOS runtime.
+- For native iOS behavior (gestures, haptics differences), use **Expo Go** on iPhone.
+
 Then:
 
 - Press `w` for **web** in the terminal, or scan the QR code with **Expo Go** (same Wi‑Fi as your PC).
