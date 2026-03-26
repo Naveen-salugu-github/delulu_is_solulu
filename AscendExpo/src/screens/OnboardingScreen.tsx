@@ -17,6 +17,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { GradientBackground } from '../components/GradientBackground';
+import { TypewriterText } from '../components/TypewriterText';
 import { theme } from '../theme';
 import { useApp } from '../context/AppContext';
 import type { FutureSelfProfile, LifeCategory, RootStackParamList, UserProfile } from '../types';
@@ -48,22 +49,39 @@ const ZODIAC = [
   'Aries', 'Taurus', 'Gemini', 'Cancer', 'Leo', 'Virgo',
   'Libra', 'Scorpio', 'Sagittarius', 'Capricorn', 'Aquarius', 'Pisces',
 ];
-const INCOME_METHODS = ['Salary job', 'Business', 'Freelancing', 'Content/Creator', 'Investing', 'Mixed'];
 const RELATIONSHIP_STATUS = ['Single', 'Dating', 'Committed', 'Married'];
 const PARTNER_TRAITS = ['Feminine', 'Kind', 'Ambitious', 'Loyal', 'Playful', 'Emotionally mature', 'Fit', 'Spiritual'];
+const GENDER = ['Male', 'Female', 'Non-binary', 'Prefer not to say'];
+const KIDS = ['No', 'Yes', 'Prefer not to say'];
 
 export default function OnboardingScreen() {
   const navigation = useNavigation<Nav>();
   const { completeOnboarding } = useApp();
   const [step, setStep] = useState(0);
+
+  const [typingDone, setTypingDone] = useState(false);
+
+  const [preferredName, setPreferredName] = useState('');
+  const [locationNow, setLocationNow] = useState('');
+  const [gender, setGender] = useState<string>('Prefer not to say');
+  const [age, setAge] = useState<string>('');
+  const [hasKids, setHasKids] = useState<string>('No');
+  const [workRole, setWorkRole] = useState('');
+  const [workFeeling, setWorkFeeling] = useState('');
+  const [recentBuild, setRecentBuild] = useState('');
+  const [selfDescription, setSelfDescription] = useState('');
+  const [shapingEvent, setShapingEvent] = useState('');
+  const [currentStruggle, setCurrentStruggle] = useState('');
+  const [mostImportantPeople, setMostImportantPeople] = useState('');
+  const [manifestation, setManifestation] = useState('');
+  const [whyImportant, setWhyImportant] = useState('');
+
   const [categories, setCategories] = useState<Set<LifeCategory>>(new Set());
   const [incomeT, setIncomeT] = useState(0.35);
   const [lifestyle, setLifestyle] = useState<Set<string>>(new Set());
   const [personality, setPersonality] = useState<Set<string>>(new Set());
   const [fears, setFears] = useState<Set<string>>(new Set());
   const [zodiacSign, setZodiacSign] = useState<string>('Leo');
-  const [incomeMethod, setIncomeMethod] = useState<string>('Salary job');
-  const [currentIncomeMonthly, setCurrentIncomeMonthly] = useState<string>('');
   const [relationshipStatus, setRelationshipStatus] = useState<string>('Single');
   const [partnerTraits, setPartnerTraits] = useState<Set<string>>(new Set());
   const [settlementVision, setSettlementVision] = useState<string>('');
@@ -73,12 +91,14 @@ export default function OnboardingScreen() {
 
   const next = () => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setTypingDone(false);
     setStep((s) => s + 1);
     void Haptics.selectionAsync();
   };
 
   const back = () => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setTypingDone(true);
     setStep((s) => Math.max(0, s - 1));
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
@@ -95,12 +115,22 @@ export default function OnboardingScreen() {
 
   const finish = async () => {
     const fs: FutureSelfProfile = {
+      preferredName: preferredName.trim() || undefined,
+      locationNow: locationNow.trim() || undefined,
+      gender,
+      age: age.trim() ? Number(age.replace(/[^\d]/g, '')) : null,
+      hasKids,
+      workRole: workRole.trim() || undefined,
+      workFeeling: workFeeling.trim() || undefined,
+      recentBuild: recentBuild.trim() || undefined,
+      selfDescription: selfDescription.trim() || undefined,
+      shapingEvent: shapingEvent.trim() || undefined,
+      currentStruggle: currentStruggle.trim() || undefined,
+      mostImportantPeople: mostImportantPeople.trim() || undefined,
+      manifestation: manifestation.trim() || undefined,
+      whyImportant: whyImportant.trim() || undefined,
       goals: Array.from(categories),
       incomeTargetAnnualINR: annual,
-      currentIncomeMonthlyINR: currentIncomeMonthly.trim()
-        ? Number(currentIncomeMonthly.replace(/[^\d]/g, ''))
-        : null,
-      incomeMethod,
       lifestyleTags: Array.from(lifestyle).sort(),
       personalityTraits: Array.from(personality).sort(),
       fears: Array.from(fears).sort(),
@@ -136,26 +166,266 @@ export default function OnboardingScreen() {
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           {step === 0 && (
             <View>
-              <Text style={styles.hero}>Design the life you want to step into.</Text>
-              <Text style={styles.body}>
-                Ascend builds immersive visualization sessions that evolve with your behavior.
-              </Text>
-              <Pressable
-                style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.88 }]}
-                onPress={() => {
-                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  next();
-                }}
-              >
-                <Text style={styles.primaryBtnText}>Start</Text>
-              </Pressable>
+              <TypewriterText
+                text="Before we begin, I have a few questions. The more detail you share, the better the experience becomes. Everything you share is completely confidential."
+                style={styles.hero}
+                onDone={() => setTypingDone(true)}
+              />
+              {typingDone && (
+                <Pressable
+                  style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.88 }]}
+                  onPress={() => {
+                    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    next();
+                  }}
+                >
+                  <Text style={styles.primaryBtnText}>Continue</Text>
+                </Pressable>
+              )}
             </View>
           )}
 
           {step === 1 && (
+            <TextStep
+              title="What should I call you?"
+              subtitle="A name that feels like you."
+              value={preferredName}
+              onChange={setPreferredName}
+              placeholder="e.g. Naveen"
+              typingDone={typingDone}
+              onTyped={() => setTypingDone(true)}
+              onContinue={next}
+            />
+          )}
+
+          {step === 2 && (
             <View>
-              <Text style={styles.title}>What are you ascending toward?</Text>
-              <Text style={styles.body}>Choose every area that matters.</Text>
+              <TypewriterText
+                text={preferredName.trim() ? `Lovely, ${preferredName.trim()}.` : 'Lovely.'}
+                style={styles.title}
+                onDone={() => setTypingDone(true)}
+              />
+              {typingDone && (
+                <Pressable style={styles.primaryBtn} onPress={next}>
+                  <Text style={styles.primaryBtnText}>Continue</Text>
+                </Pressable>
+              )}
+            </View>
+          )}
+
+          {step === 3 && (
+            <TextStep
+              title="Where do you live?"
+              subtitle="City + country is perfect."
+              value={locationNow}
+              onChange={setLocationNow}
+              placeholder="e.g. Hyderabad, India"
+              typingDone={typingDone}
+              onTyped={() => setTypingDone(true)}
+              onContinue={next}
+            />
+          )}
+
+          {step === 4 && (
+            <ChipStepTyped
+              title="Gender"
+              subtitle="Optional, but it helps me match tone."
+              items={GENDER}
+              selected={new Set([gender])}
+              singleSelect
+              typingDone={typingDone}
+              onTyped={() => setTypingDone(true)}
+              onToggle={(v) => {
+                setGender(v);
+                void Haptics.selectionAsync();
+              }}
+              onContinue={next}
+            />
+          )}
+
+          {step === 5 && (
+            <TextStep
+              title="Age"
+              subtitle="Optional."
+              value={age}
+              onChange={setAge}
+              placeholder="e.g. 24"
+              keyboard="number-pad"
+              typingDone={typingDone}
+              onTyped={() => setTypingDone(true)}
+              onContinue={next}
+            />
+          )}
+
+          {step === 6 && (
+            <ChipStepTyped
+              title="Do you have kids?"
+              subtitle="Optional."
+              items={KIDS}
+              selected={new Set([hasKids])}
+              singleSelect
+              typingDone={typingDone}
+              onTyped={() => setTypingDone(true)}
+              onToggle={(v) => {
+                setHasKids(v);
+                void Haptics.selectionAsync();
+              }}
+              onContinue={next}
+            />
+          )}
+
+          {step === 7 && (
+            <TextStep
+              title="What do you do for work?"
+              subtitle="Role + industry is enough."
+              value={workRole}
+              onChange={setWorkRole}
+              placeholder="e.g. Sales, SaaS"
+              typingDone={typingDone}
+              onTyped={() => setTypingDone(true)}
+              onContinue={next}
+            />
+          )}
+
+          {step === 8 && (
+            <TextStep
+              title="How do you feel about your work right now?"
+              subtitle="Be honest. This shapes the narrative tone."
+              value={workFeeling}
+              onChange={setWorkFeeling}
+              placeholder="e.g. stuck but hungry"
+              multiline
+              typingDone={typingDone}
+              onTyped={() => setTypingDone(true)}
+              onContinue={next}
+            />
+          )}
+
+          {step === 9 && (
+            <TextStep
+              title="What have you built recently?"
+              subtitle="A win, a project, a habit, anything."
+              value={recentBuild}
+              onChange={setRecentBuild}
+              placeholder="e.g. launched a landing page"
+              multiline
+              typingDone={typingDone}
+              onTyped={() => setTypingDone(true)}
+              onContinue={next}
+            />
+          )}
+
+          {step === 10 && (
+            <TextStep
+              title="Since we never met, describe yourself."
+              subtitle="A few lines. How you move, think, and react."
+              value={selfDescription}
+              onChange={setSelfDescription}
+              placeholder="e.g. calm, intense, overthinks at night…"
+              multiline
+              typingDone={typingDone}
+              onTyped={() => setTypingDone(true)}
+              onContinue={next}
+            />
+          )}
+
+          {step === 11 && (
+            <TextStep
+              title="What’s something you’ve been through that shaped who you are today?"
+              subtitle="You can be brief."
+              value={shapingEvent}
+              onChange={setShapingEvent}
+              placeholder="e.g. a breakup, a loss, a setback…"
+              multiline
+              typingDone={typingDone}
+              onTyped={() => setTypingDone(true)}
+              onContinue={next}
+            />
+          )}
+
+          {step === 12 && (
+            <TextStep
+              title="If you’re struggling with something, tell me now."
+              subtitle="This becomes part of your future-self message."
+              value={currentStruggle}
+              onChange={setCurrentStruggle}
+              placeholder="e.g. procrastination, anxiety, distractions…"
+              multiline
+              typingDone={typingDone}
+              onTyped={() => setTypingDone(true)}
+              onContinue={next}
+            />
+          )}
+
+          {step === 13 && (
+            <ChipStepTyped
+              title="Relationship status"
+              subtitle="So the story feels real."
+              items={RELATIONSHIP_STATUS}
+              selected={new Set([relationshipStatus])}
+              singleSelect
+              typingDone={typingDone}
+              onTyped={() => setTypingDone(true)}
+              onToggle={(v) => {
+                setRelationshipStatus(v);
+                void Haptics.selectionAsync();
+              }}
+              onContinue={next}
+            />
+          )}
+
+          {step === 14 && (
+            <TextStep
+              title="Who are the most important people in your life?"
+              subtitle="Names or roles."
+              value={mostImportantPeople}
+              onChange={setMostImportantPeople}
+              placeholder="e.g. mom, best friend, mentor…"
+              multiline
+              typingDone={typingDone}
+              onTyped={() => setTypingDone(true)}
+              onContinue={next}
+            />
+          )}
+
+          {step === 15 && (
+            <TextStep
+              title="Tell me what you want most."
+              subtitle="Describe what you are manifesting."
+              value={manifestation}
+              onChange={setManifestation}
+              placeholder="e.g. build a business that pays ₹X…"
+              multiline
+              typingDone={typingDone}
+              onTyped={() => setTypingDone(true)}
+              onContinue={next}
+            />
+          )}
+
+          {step === 16 && (
+            <TextStep
+              title="Why is this so important?"
+              subtitle="Your real reason."
+              value={whyImportant}
+              onChange={setWhyImportant}
+              placeholder="e.g. freedom, proving it to myself…"
+              multiline
+              typingDone={typingDone}
+              onTyped={() => setTypingDone(true)}
+              onContinue={next}
+            />
+          )}
+
+          {step === 17 && (
+            <View>
+              <TypewriterText
+                text="Now we’ll shape the structure—goals, lifestyle, mindset."
+                style={styles.title}
+                onDone={() => setTypingDone(true)}
+              />
+              {typingDone && (
+                <>
+                  <Text style={styles.body}>Choose every area that matters.</Text>
               <View style={styles.chipWrap}>
                 {LIFE_CATEGORIES.map((c) => {
                   const on = categories.has(c.id);
@@ -187,33 +457,43 @@ export default function OnboardingScreen() {
               >
                 <Text style={styles.primaryBtnText}>Continue</Text>
               </Pressable>
+                </>
+              )}
             </View>
           )}
 
-          {step === 2 && (
+          {step === 18 && (
             <View>
-              <Text style={styles.title}>Your income horizon</Text>
-              <Text style={styles.body}>Slide from a steady foundation to a generational scale.</Text>
-              <View style={styles.sliderCard}>
-                <Text style={styles.incomeBig}>{incomeLabel}</Text>
-                <Slider
-                  style={styles.slider}
-                  minimumValue={0}
-                  maximumValue={1}
-                  value={incomeT}
-                  onValueChange={setIncomeT}
-                  minimumTrackTintColor={theme.accentCyan}
-                  maximumTrackTintColor="rgba(255,255,255,0.2)"
-                  thumbTintColor={theme.textPrimary}
-                />
-              </View>
-              <Pressable style={styles.primaryBtn} onPress={next}>
-                <Text style={styles.primaryBtnText}>Continue</Text>
-              </Pressable>
+              <TypewriterText
+                text="Your income horizon."
+                style={styles.title}
+                onDone={() => setTypingDone(true)}
+              />
+              {typingDone && (
+                <>
+                  <Text style={styles.body}>Slide from a steady foundation to a generational scale.</Text>
+                  <View style={styles.sliderCard}>
+                    <Text style={styles.incomeBig}>{incomeLabel}</Text>
+                    <Slider
+                      style={styles.slider}
+                      minimumValue={0}
+                      maximumValue={1}
+                      value={incomeT}
+                      onValueChange={setIncomeT}
+                      minimumTrackTintColor={theme.accentCyan}
+                      maximumTrackTintColor="rgba(255,255,255,0.2)"
+                      thumbTintColor={theme.textPrimary}
+                    />
+                  </View>
+                  <Pressable style={styles.primaryBtn} onPress={next}>
+                    <Text style={styles.primaryBtnText}>Continue</Text>
+                  </Pressable>
+                </>
+              )}
             </View>
           )}
 
-          {step === 3 && (
+          {step === 19 && (
             <ChipStep
               title="What does your ideal life look like?"
               subtitle="Pick the scenes that feel true."
@@ -232,7 +512,7 @@ export default function OnboardingScreen() {
             />
           )}
 
-          {step === 4 && (
+          {step === 20 && (
             <ChipStep
               title="Personality traits"
               subtitle="Choose traits your future self leads with."
@@ -251,7 +531,7 @@ export default function OnboardingScreen() {
             />
           )}
 
-          {step === 5 && (
+          {step === 21 && (
             <ChipStep
               title="What holds you back today?"
               subtitle="Name the friction so the story can transform it."
@@ -270,7 +550,7 @@ export default function OnboardingScreen() {
             />
           )}
 
-          {step === 6 && (
+          {step === 22 && (
             <ChipStep
               title="What is your zodiac sign?"
               subtitle="We use this to shape communication style and emotional pacing."
@@ -285,55 +565,7 @@ export default function OnboardingScreen() {
             />
           )}
 
-          {step === 7 && (
-            <ChipStep
-              title="How are you making money right now?"
-              subtitle="This helps generate realistic daily tasks and money language."
-              items={INCOME_METHODS}
-              selected={new Set([incomeMethod])}
-              onToggle={(v) => {
-                setIncomeMethod(v);
-                void Haptics.selectionAsync();
-              }}
-              singleSelect
-              onContinue={next}
-            />
-          )}
-
-          {step === 8 && (
-            <View>
-              <Text style={styles.title}>Current monthly income</Text>
-              <Text style={styles.body}>Optional, but improves your growth timeline realism.</Text>
-              <TextInput
-                value={currentIncomeMonthly}
-                onChangeText={setCurrentIncomeMonthly}
-                placeholder="e.g. 75000"
-                placeholderTextColor={theme.textSecondary}
-                keyboardType="number-pad"
-                style={styles.input}
-              />
-              <Pressable style={styles.primaryBtn} onPress={next}>
-                <Text style={styles.primaryBtnText}>Continue</Text>
-              </Pressable>
-            </View>
-          )}
-
-          {step === 9 && (
-            <ChipStep
-              title="Relationship status"
-              subtitle="This keeps the relationship narrative authentic."
-              items={RELATIONSHIP_STATUS}
-              selected={new Set([relationshipStatus])}
-              onToggle={(v) => {
-                setRelationshipStatus(v);
-                void Haptics.selectionAsync();
-              }}
-              singleSelect
-              onContinue={next}
-            />
-          )}
-
-          {step === 10 && (
+          {step === 23 && (
             <ChipStep
               title="Your ideal girlfriend / partner traits"
               subtitle="Pick what matters most to you emotionally and practically."
@@ -352,7 +584,7 @@ export default function OnboardingScreen() {
             />
           )}
 
-          {step === 11 && (
+          {step === 24 && (
             <View>
               <Text style={styles.title}>Where do you want to settle?</Text>
               <Text style={styles.body}>City/country or vibe: \"Dubai\", \"Bangalore\", \"Bali by the beach\".</Text>
@@ -369,13 +601,16 @@ export default function OnboardingScreen() {
             </View>
           )}
 
-          {step === 12 && (
+          {step === 25 && (
             <View>
               <Text style={styles.title}>Your future self profile</Text>
               <View style={styles.summary}>
+                <SummaryRow label="Name" value={preferredName || '—'} />
+                <SummaryRow label="Location" value={locationNow || '—'} />
+                <SummaryRow label="Work" value={workRole || '—'} />
+                <SummaryRow label="Manifesting" value={manifestation || '—'} />
                 <SummaryRow label="Focus" value={Array.from(categories).join(', ') || '—'} />
                 <SummaryRow label="Income" value={incomeLabel} />
-                <SummaryRow label="Money mode" value={incomeMethod} />
                 <SummaryRow label="Zodiac" value={zodiacSign} />
                 <SummaryRow label="Lifestyle" value={Array.from(lifestyle).join(', ') || '—'} />
                 <SummaryRow label="Traits" value={Array.from(personality).join(', ') || '—'} />
@@ -398,6 +633,103 @@ export default function OnboardingScreen() {
         </ScrollView>
       </SafeAreaView>
     </GradientBackground>
+  );
+}
+
+function TextStep({
+  title,
+  subtitle,
+  value,
+  onChange,
+  placeholder,
+  onContinue,
+  typingDone,
+  onTyped,
+  keyboard,
+  multiline,
+}: {
+  title: string;
+  subtitle: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  onContinue: () => void;
+  typingDone: boolean;
+  onTyped: () => void;
+  keyboard?: 'default' | 'number-pad';
+  multiline?: boolean;
+}) {
+  return (
+    <View>
+      <TypewriterText text={title} style={styles.title} onDone={onTyped} />
+      {typingDone && (
+        <>
+          <Text style={styles.body}>{subtitle}</Text>
+          <TextInput
+            value={value}
+            onChangeText={onChange}
+            placeholder={placeholder}
+            placeholderTextColor={theme.textSecondary}
+            keyboardType={keyboard ?? 'default'}
+            style={[styles.input, multiline && { height: 120, textAlignVertical: 'top' }]}
+            multiline={multiline}
+          />
+          <Pressable style={styles.primaryBtn} onPress={onContinue}>
+            <Text style={styles.primaryBtnText}>Continue</Text>
+          </Pressable>
+        </>
+      )}
+    </View>
+  );
+}
+
+function ChipStepTyped({
+  title,
+  subtitle,
+  items,
+  selected,
+  onToggle,
+  onContinue,
+  typingDone,
+  onTyped,
+  singleSelect,
+}: {
+  title: string;
+  subtitle: string;
+  items: string[];
+  selected: Set<string>;
+  onToggle: (v: string) => void;
+  onContinue: () => void;
+  typingDone: boolean;
+  onTyped: () => void;
+  singleSelect?: boolean;
+}) {
+  return (
+    <View>
+      <TypewriterText text={title} style={styles.title} onDone={onTyped} />
+      {typingDone && (
+        <>
+          <Text style={styles.body}>{subtitle}</Text>
+          <View style={styles.chipWrap}>
+            {items.map((item) => {
+              const on = selected.has(item);
+              return (
+                <Pressable
+                  key={item}
+                  onPress={() => onToggle(item)}
+                  style={[styles.chip, on && styles.chipOnAlt]}
+                >
+                  <Text style={styles.chipText}>{item}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Pressable style={styles.primaryBtn} onPress={onContinue}>
+            <Text style={styles.primaryBtnText}>Continue</Text>
+          </Pressable>
+        </>
+      )}
+    </View>
   );
 }
 

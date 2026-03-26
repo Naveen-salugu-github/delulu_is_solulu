@@ -26,10 +26,24 @@ export const LIFE_CATEGORIES: {
 ];
 
 export interface FutureSelfProfile {
+  // Identity & context (onboarding)
+  preferredName?: string;
+  locationNow?: string;
+  gender?: string;
+  age?: number | null;
+  hasKids?: string;
+  workRole?: string;
+  workFeeling?: string;
+  recentBuild?: string;
+  selfDescription?: string;
+  shapingEvent?: string;
+  currentStruggle?: string;
+  mostImportantPeople?: string;
+  manifestation?: string;
+  whyImportant?: string;
+
   goals: LifeCategory[];
   incomeTargetAnnualINR: number;
-  currentIncomeMonthlyINR?: number | null;
-  incomeMethod?: string;
   lifestyleTags: string[];
   personalityTraits: string[];
   fears: string[];

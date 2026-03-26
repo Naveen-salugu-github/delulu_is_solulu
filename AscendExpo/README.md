@@ -1,6 +1,6 @@
 # Ascend (Expo / React Native)
 
-Cross-platform version of **Ascend**: onboarding, home dashboard, visualization session player, daily tasks, streaks, adaptive narrative tone, haptics, AsyncStorage persistence, and optional OpenAI narratives.
+Cross-platform version of **Ascend**: onboarding, home dashboard, visualization session player, daily tasks, streaks, adaptive narrative tone, haptics, AsyncStorage persistence, and optional Groq AI narratives.
 
 ## Requirements
 
@@ -41,7 +41,7 @@ Create a `.env` in this folder (Expo loads `EXPO_PUBLIC_*` at bundle time):
 
 ```env
 EXPO_PUBLIC_GROQ_API_KEY=groq_your_key_here
-EXPO_PUBLIC_GROQ_MODEL=llama3-8b-8192
+EXPO_PUBLIC_GROQ_MODEL=llama-3.1-8b-instant
 ```
 
 Restart `npx expo start` after changing env. Without a key, the app uses the built-in offline narrative.
