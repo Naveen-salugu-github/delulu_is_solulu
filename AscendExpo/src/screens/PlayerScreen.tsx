@@ -56,6 +56,7 @@ export default function PlayerScreen() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [narrativeSource, setNarrativeSource] = useState<'groq' | 'fallback'>('fallback');
   const [ambienceChoice, setAmbienceChoice] = useState<AmbienceChoice>('auto');
+  const [ambienceError, setAmbienceError] = useState(false);
 
   const sentences = useMemo(() => splitSentences(narrative), [narrative]);
   const progress = sentences.length ? (currentIndex + 1) / sentences.length : 0;
@@ -87,6 +88,17 @@ export default function PlayerScreen() {
       ])
     ).start();
   }, [pulse]);
+
+  useEffect(() => {
+    // Ensure device/browser audio can play under narration (including silent mode on iOS).
+    void Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+      staysActiveInBackground: false,
+      playsInSilentModeIOS: true,
+      shouldDuckAndroid: true,
+      playThroughEarpieceAndroid: false,
+    });
+  }, []);
 
   useEffect(() => {
     Animated.timing(glow, {
@@ -130,6 +142,7 @@ export default function PlayerScreen() {
     let cancelled = false;
     (async () => {
       try {
+        setAmbienceError(false);
         // Stop any previous ambience.
         if (ambienceRef.current) {
           await ambienceRef.current.stopAsync();
@@ -142,9 +155,16 @@ export default function PlayerScreen() {
         const kind =
           ambienceChoice === 'auto' ? pickAmbience(profile) : (ambienceChoice as Exclude<AmbienceChoice, 'off' | 'auto'>);
         const url = ambienceUrl(kind);
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          staysActiveInBackground: false,
+          playsInSilentModeIOS: true,
+          shouldDuckAndroid: true,
+          playThroughEarpieceAndroid: false,
+        });
         const { sound } = await Audio.Sound.createAsync(
           { uri: url },
-          { isLooping: true, volume: 0.18, shouldPlay: true }
+          { isLooping: true, volume: 0.35, shouldPlay: true }
         );
         if (cancelled) {
           await sound.unloadAsync();
@@ -152,7 +172,9 @@ export default function PlayerScreen() {
         }
         ambienceRef.current = sound;
       } catch {
-        // If ambience fails (network/web/autoplay), we still allow narration to proceed.
+        // If ambience fails (network/web/autoplay), narration continues and we show a subtle hint.
+        setAmbienceError(true);
+        console.warn('[Ascend][Ambience] Failed to play selected ambience track.');
       }
     })();
 
@@ -376,6 +398,9 @@ export default function PlayerScreen() {
             <Ionicons name="musical-notes-outline" size={18} color={theme.textSecondary} />
             <Text style={styles.ambienceText}>Ambience: {ambienceLabel}</Text>
           </Pressable>
+          {ambienceError && ambienceChoice !== 'off' && (
+            <Text style={styles.ambienceHint}>Ambience unavailable on this network/device right now.</Text>
+          )}
         </View>
 
         <View style={styles.orbWrap}>
@@ -463,6 +488,12 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(109,59,255,0.18)',
   },
   ambienceText: { color: theme.textSecondary, fontSize: 13, fontWeight: '600' },
+  ambienceHint: {
+    marginTop: 6,
+    color: theme.textSecondary,
+    fontSize: 12,
+    opacity: 0.9,
+  },
   iconBtn: {
     width: 44,
     height: 44,
