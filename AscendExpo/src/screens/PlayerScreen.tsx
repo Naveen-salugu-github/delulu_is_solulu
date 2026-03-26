@@ -18,6 +18,7 @@ import * as Speech from 'expo-speech';
 import * as Haptics from 'expo-haptics';
 import { Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
+import Slider from '@react-native-community/slider';
 import { GradientBackground } from '../components/GradientBackground';
 import { theme } from '../theme';
 import { useApp } from '../context/AppContext';
@@ -25,7 +26,7 @@ import type { RootStackParamList } from '../types';
 import { generateVisualizationNarrative } from '../services/ai';
 import { toneForBehavior } from '../services/feedback';
 import { dayKey } from '../services/tasks';
-import { ambienceUrl, pickAmbience } from '../services/ambience';
+import { ambienceSource, pickAmbience } from '../services/ambience';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Player'>;
 
@@ -56,6 +57,7 @@ export default function PlayerScreen() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [narrativeSource, setNarrativeSource] = useState<'groq' | 'fallback'>('fallback');
   const [ambienceChoice, setAmbienceChoice] = useState<AmbienceChoice>('auto');
+  const [ambienceVolume, setAmbienceVolume] = useState(0.35);
   const [ambienceError, setAmbienceError] = useState(false);
 
   const sentences = useMemo(() => splitSentences(narrative), [narrative]);
@@ -154,7 +156,7 @@ export default function PlayerScreen() {
 
         const kind =
           ambienceChoice === 'auto' ? pickAmbience(profile) : (ambienceChoice as Exclude<AmbienceChoice, 'off' | 'auto'>);
-        const url = ambienceUrl(kind);
+        const source = ambienceSource(kind);
         await Audio.setAudioModeAsync({
           allowsRecordingIOS: false,
           staysActiveInBackground: false,
@@ -163,8 +165,8 @@ export default function PlayerScreen() {
           playThroughEarpieceAndroid: false,
         });
         const { sound } = await Audio.Sound.createAsync(
-          { uri: url },
-          { isLooping: true, volume: 0.35, shouldPlay: true }
+          source,
+          { isLooping: true, volume: ambienceVolume, shouldPlay: true }
         );
         if (cancelled) {
           await sound.unloadAsync();
@@ -182,6 +184,18 @@ export default function PlayerScreen() {
       cancelled = true;
     };
   }, [profile, phase, ambienceChoice]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        if (ambienceRef.current) {
+          await ambienceRef.current.setVolumeAsync(ambienceVolume);
+        }
+      } catch {
+        // Ignore transient player update errors.
+      }
+    })();
+  }, [ambienceVolume]);
 
   useEffect(() => {
     if (phase !== 'playing' || sentences.length === 0 || voice) return;
@@ -401,6 +415,23 @@ export default function PlayerScreen() {
           {ambienceError && ambienceChoice !== 'off' && (
             <Text style={styles.ambienceHint}>Ambience unavailable on this network/device right now.</Text>
           )}
+          {ambienceChoice !== 'off' && (
+            <View style={styles.volumeRow}>
+              <Text style={styles.volumeLabel}>Volume</Text>
+              <Slider
+                style={styles.volumeSlider}
+                minimumValue={0}
+                maximumValue={1}
+                step={0.05}
+                value={ambienceVolume}
+                onValueChange={setAmbienceVolume}
+                minimumTrackTintColor={theme.accentCyan}
+                maximumTrackTintColor="rgba(109,59,255,0.18)"
+                thumbTintColor={theme.textPrimary}
+              />
+              <Text style={styles.volumeValue}>{Math.round(ambienceVolume * 100)}%</Text>
+            </View>
+          )}
         </View>
 
         <View style={styles.orbWrap}>
@@ -493,6 +524,23 @@ const styles = StyleSheet.create({
     color: theme.textSecondary,
     fontSize: 12,
     opacity: 0.9,
+  },
+  volumeRow: {
+    marginTop: 8,
+    width: '100%',
+    paddingRight: 6,
+  },
+  volumeLabel: {
+    color: theme.textSecondary,
+    fontSize: 12,
+    marginBottom: 2,
+  },
+  volumeSlider: { width: '100%', height: 30 },
+  volumeValue: {
+    alignSelf: 'flex-end',
+    color: theme.textSecondary,
+    fontSize: 11,
+    marginTop: -2,
   },
   iconBtn: {
     width: 44,
