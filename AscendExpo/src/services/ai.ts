@@ -37,7 +37,7 @@ function buildPrompt(
   const partnerTraits = (profile.idealPartnerTraits ?? []).join(', ') || 'not shared';
   const settlementVision = profile.settlementVision ?? 'not shared';
 
-  return `You are a premium visualization coach. Generate a vivid second-person narrative (800–1200 words) for someone building their future self in India.
+  return `You are a premium visualization coach. Generate a vivid second-person narrative designed to be ~4 minutes spoken aloud (roughly 520–650 words) for someone building their future self in India.
 
 Tone mode: ${tone}
 
@@ -45,6 +45,7 @@ The user’s inputs below are for internal grounding only. Do not echo them as a
 
 Guidance:
 - Second person POV: use “you”.
+- Start immediately inside a sensory scene the user can inhabit (no long preface). Within the first 2–3 sentences, anchor: place, time of day, body sensation, one concrete object.
 - Make the narrative feel like the future self is speaking with subtle reassurance and specific, emotionally grounded details.
 - Use zodiac to shape communication rhythm and micro-behavior (pace, emphasis, tone), but do NOT mention “your zodiac sign” explicitly or rely on stereotypes.
 - Use money/lifestyle/relationship/settlement details to create lived sensory scenes (morning routine, work sessions, partner moments, city atmosphere).
