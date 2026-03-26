@@ -47,13 +47,16 @@ export default function PlayerScreen() {
   const [visibleCount, setVisibleCount] = useState(0);
   const [voice, setVoice] = useState(false);
   const [tone, setTone] = useState('neutral');
+  const [isSpeaking, setIsSpeaking] = useState(false);
 
   const sentences = useMemo(() => splitSentences(narrative), [narrative]);
   const progress = sentences.length ? visibleCount / sentences.length : 0;
 
   const pulse = useRef(new Animated.Value(1)).current;
+  const glow = useRef(new Animated.Value(0.42)).current;
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recorded = useRef(false);
+  const speechQueueIndex = useRef(0);
 
   useEffect(() => {
     Animated.loop(
@@ -73,6 +76,15 @@ export default function PlayerScreen() {
       ])
     ).start();
   }, [pulse]);
+
+  useEffect(() => {
+    Animated.timing(glow, {
+      toValue: isSpeaking ? 1 : 0.42,
+      duration: isSpeaking ? 220 : 420,
+      easing: Easing.inOut(Easing.ease),
+      useNativeDriver: true,
+    }).start();
+  }, [glow, isSpeaking]);
 
   useEffect(() => {
     if (!profile) return;
@@ -99,9 +111,10 @@ export default function PlayerScreen() {
   }, [profile, dailyProgress, todayTasks]);
 
   useEffect(() => {
-    if (phase !== 'playing' || sentences.length === 0) return;
+    if (phase !== 'playing' || sentences.length === 0 || voice) return;
     const perMs = (SESSION_SECONDS * 1000 * 0.85) / Math.max(sentences.length, 1);
     setVisibleCount(1);
+    setIsSpeaking(false);
     if (sentences.length <= 1) {
       setPhase('done');
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -119,6 +132,7 @@ export default function PlayerScreen() {
       }
       if (i >= sentences.length) {
         if (timerRef.current) clearInterval(timerRef.current);
+        setIsSpeaking(false);
         setPhase('done');
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
@@ -126,21 +140,62 @@ export default function PlayerScreen() {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [phase, sentences.length]);
+  }, [phase, sentences.length, voice]);
 
   useEffect(() => {
-    if (!voice || !narrative) {
+    if (!voice || phase !== 'playing' || sentences.length === 0) {
+      setIsSpeaking(false);
       void Speech.stop();
       return;
     }
-    Speech.speak(narrative, {
-      language: 'en-IN',
-      rate: 0.92,
-    });
+    if (timerRef.current) clearInterval(timerRef.current);
+    speechQueueIndex.current = 0;
+    setVisibleCount(1);
+
+    const speakNext = async () => {
+      const idx = speechQueueIndex.current;
+      if (idx >= sentences.length) {
+        setIsSpeaking(false);
+        setPhase('done');
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        return;
+      }
+      const sentence = sentences[idx];
+      const voices = await Speech.getAvailableVoicesAsync();
+      const preferredVoice = voices.find(
+        (v) => v.language.startsWith('en-IN') && (v.quality === 'Enhanced' || v.quality === 'Default')
+      ) ?? voices.find((v) => v.language.startsWith('en-'));
+
+      setIsSpeaking(true);
+      Speech.speak(sentence, {
+        language: preferredVoice?.language ?? 'en-IN',
+        voice: preferredVoice?.identifier,
+        pitch: 1,
+        rate: 0.97,
+        onDone: () => {
+          speechQueueIndex.current += 1;
+          const nextVisible = Math.min(sentences.length, speechQueueIndex.current + 1);
+          setVisibleCount(nextVisible);
+          if (nextVisible === Math.floor(sentences.length / 3) || nextVisible === Math.floor((2 * sentences.length) / 3)) {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          }
+          if (nextVisible > 0 && nextVisible % 5 === 0) {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          }
+          void speakNext();
+        },
+        onError: () => {
+          setIsSpeaking(false);
+          setPhase('done');
+        },
+      });
+    };
+    void speakNext();
     return () => {
+      setIsSpeaking(false);
       void Speech.stop();
     };
-  }, [voice, narrative]);
+  }, [voice, phase, sentences]);
 
   useEffect(() => {
     if (phase !== 'done' || recorded.current) return;
@@ -164,6 +219,7 @@ export default function PlayerScreen() {
 
   const close = () => {
     Speech.stop();
+    setIsSpeaking(false);
     navigation.goBack();
   };
 
@@ -187,12 +243,12 @@ export default function PlayerScreen() {
           <Pressable onPress={close} style={styles.iconBtn}>
             <Text style={styles.close}>✕</Text>
           </Pressable>
-          <Text style={styles.voiceLabel}>Voice</Text>
+          <Text style={styles.voiceLabel}>{isSpeaking ? 'Voice • speaking' : 'Voice'}</Text>
           <Switch value={voice} onValueChange={setVoice} trackColor={{ false: '#333', true: theme.accentCyan }} />
         </View>
 
         <View style={styles.orbWrap}>
-          <Animated.View style={{ transform: [{ scale: pulse }] }}>
+          <Animated.View style={{ transform: [{ scale: pulse }], opacity: glow }}>
             <LinearGradient
               colors={[`${theme.accentCyan}cc`, `${theme.accentViolet}99`, 'transparent']}
               style={styles.orb}

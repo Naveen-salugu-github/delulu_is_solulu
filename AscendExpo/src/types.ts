@@ -28,9 +28,15 @@ export const LIFE_CATEGORIES: {
 export interface FutureSelfProfile {
   goals: LifeCategory[];
   incomeTargetAnnualINR: number;
+  currentIncomeMonthlyINR?: number | null;
+  incomeMethod?: string;
   lifestyleTags: string[];
   personalityTraits: string[];
   fears: string[];
+  zodiacSign?: string;
+  relationshipStatus?: string;
+  idealPartnerTraits?: string[];
+  settlementVision?: string;
 }
 
 export interface UserProfile {

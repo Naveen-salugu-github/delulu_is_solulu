@@ -8,6 +8,7 @@ import {
   LayoutAnimation,
   Platform,
   UIManager,
+  TextInput,
 } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { Ionicons } from '@expo/vector-icons';
@@ -43,6 +44,13 @@ const FEARS = [
   'low confidence',
   'distractions',
 ];
+const ZODIAC = [
+  'Aries', 'Taurus', 'Gemini', 'Cancer', 'Leo', 'Virgo',
+  'Libra', 'Scorpio', 'Sagittarius', 'Capricorn', 'Aquarius', 'Pisces',
+];
+const INCOME_METHODS = ['Salary job', 'Business', 'Freelancing', 'Content/Creator', 'Investing', 'Mixed'];
+const RELATIONSHIP_STATUS = ['Single', 'Dating', 'Committed', 'Married'];
+const PARTNER_TRAITS = ['Feminine', 'Kind', 'Ambitious', 'Loyal', 'Playful', 'Emotionally mature', 'Fit', 'Spiritual'];
 
 export default function OnboardingScreen() {
   const navigation = useNavigation<Nav>();
@@ -53,6 +61,12 @@ export default function OnboardingScreen() {
   const [lifestyle, setLifestyle] = useState<Set<string>>(new Set());
   const [personality, setPersonality] = useState<Set<string>>(new Set());
   const [fears, setFears] = useState<Set<string>>(new Set());
+  const [zodiacSign, setZodiacSign] = useState<string>('Leo');
+  const [incomeMethod, setIncomeMethod] = useState<string>('Salary job');
+  const [currentIncomeMonthly, setCurrentIncomeMonthly] = useState<string>('');
+  const [relationshipStatus, setRelationshipStatus] = useState<string>('Single');
+  const [partnerTraits, setPartnerTraits] = useState<Set<string>>(new Set());
+  const [settlementVision, setSettlementVision] = useState<string>('');
 
   const annual = useMemo(() => incomeFromSlider(incomeT), [incomeT]);
   const incomeLabel = useMemo(() => formatIncomeAnnualINR(annual), [annual]);
@@ -83,9 +97,17 @@ export default function OnboardingScreen() {
     const fs: FutureSelfProfile = {
       goals: Array.from(categories),
       incomeTargetAnnualINR: annual,
+      currentIncomeMonthlyINR: currentIncomeMonthly.trim()
+        ? Number(currentIncomeMonthly.replace(/[^\d]/g, ''))
+        : null,
+      incomeMethod,
       lifestyleTags: Array.from(lifestyle).sort(),
       personalityTraits: Array.from(personality).sort(),
       fears: Array.from(fears).sort(),
+      zodiacSign,
+      relationshipStatus,
+      idealPartnerTraits: Array.from(partnerTraits).sort(),
+      settlementVision: settlementVision.trim(),
     };
     const profile: UserProfile = {
       id: `${Date.now()}`,
@@ -249,14 +271,118 @@ export default function OnboardingScreen() {
           )}
 
           {step === 6 && (
+            <ChipStep
+              title="What is your zodiac sign?"
+              subtitle="We use this to shape communication style and emotional pacing."
+              items={ZODIAC}
+              selected={new Set([zodiacSign])}
+              onToggle={(v) => {
+                setZodiacSign(v);
+                void Haptics.selectionAsync();
+              }}
+              singleSelect
+              onContinue={next}
+            />
+          )}
+
+          {step === 7 && (
+            <ChipStep
+              title="How are you making money right now?"
+              subtitle="This helps generate realistic daily tasks and money language."
+              items={INCOME_METHODS}
+              selected={new Set([incomeMethod])}
+              onToggle={(v) => {
+                setIncomeMethod(v);
+                void Haptics.selectionAsync();
+              }}
+              singleSelect
+              onContinue={next}
+            />
+          )}
+
+          {step === 8 && (
+            <View>
+              <Text style={styles.title}>Current monthly income</Text>
+              <Text style={styles.body}>Optional, but improves your growth timeline realism.</Text>
+              <TextInput
+                value={currentIncomeMonthly}
+                onChangeText={setCurrentIncomeMonthly}
+                placeholder="e.g. 75000"
+                placeholderTextColor={theme.textSecondary}
+                keyboardType="number-pad"
+                style={styles.input}
+              />
+              <Pressable style={styles.primaryBtn} onPress={next}>
+                <Text style={styles.primaryBtnText}>Continue</Text>
+              </Pressable>
+            </View>
+          )}
+
+          {step === 9 && (
+            <ChipStep
+              title="Relationship status"
+              subtitle="This keeps the relationship narrative authentic."
+              items={RELATIONSHIP_STATUS}
+              selected={new Set([relationshipStatus])}
+              onToggle={(v) => {
+                setRelationshipStatus(v);
+                void Haptics.selectionAsync();
+              }}
+              singleSelect
+              onContinue={next}
+            />
+          )}
+
+          {step === 10 && (
+            <ChipStep
+              title="Your ideal girlfriend / partner traits"
+              subtitle="Pick what matters most to you emotionally and practically."
+              items={PARTNER_TRAITS}
+              selected={partnerTraits}
+              onToggle={(v) => {
+                setPartnerTraits((prev) => {
+                  const n = new Set(prev);
+                  if (n.has(v)) n.delete(v);
+                  else n.add(v);
+                  return n;
+                });
+                void Haptics.selectionAsync();
+              }}
+              onContinue={next}
+            />
+          )}
+
+          {step === 11 && (
+            <View>
+              <Text style={styles.title}>Where do you want to settle?</Text>
+              <Text style={styles.body}>City/country or vibe: \"Dubai\", \"Bangalore\", \"Bali by the beach\".</Text>
+              <TextInput
+                value={settlementVision}
+                onChangeText={setSettlementVision}
+                placeholder="e.g. Bangalore, then Dubai"
+                placeholderTextColor={theme.textSecondary}
+                style={styles.input}
+              />
+              <Pressable style={styles.primaryBtn} onPress={next}>
+                <Text style={styles.primaryBtnText}>Continue</Text>
+              </Pressable>
+            </View>
+          )}
+
+          {step === 12 && (
             <View>
               <Text style={styles.title}>Your future self profile</Text>
               <View style={styles.summary}>
                 <SummaryRow label="Focus" value={Array.from(categories).join(', ') || '—'} />
                 <SummaryRow label="Income" value={incomeLabel} />
+                <SummaryRow label="Money mode" value={incomeMethod} />
+                <SummaryRow label="Zodiac" value={zodiacSign} />
                 <SummaryRow label="Lifestyle" value={Array.from(lifestyle).join(', ') || '—'} />
                 <SummaryRow label="Traits" value={Array.from(personality).join(', ') || '—'} />
                 <SummaryRow label="Friction" value={Array.from(fears).join(', ') || '—'} />
+                <SummaryRow label="Relationship" value={relationshipStatus} />
+                <SummaryRow label="Ideal partner" value={Array.from(partnerTraits).join(', ') || '—'} />
+                <SummaryRow label="Settlement" value={settlementVision || '—'} />
               </View>
               <Text style={styles.footnote}>
                 Sessions adapt when you miss tasks or protect streaks.
@@ -288,6 +414,7 @@ function ChipStep({
   items: string[];
   selected: Set<string>;
   onToggle: (v: string) => void;
+  singleSelect?: boolean;
   onContinue: () => void;
 }) {
   return (
@@ -383,6 +510,15 @@ const styles = StyleSheet.create({
   },
   incomeBig: { fontSize: 28, fontWeight: '600', color: theme.textPrimary, marginBottom: 8 },
   slider: { width: '100%', height: 44 },
+  input: {
+    borderWidth: 1,
+    borderColor: theme.glassStroke,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 14,
+    color: theme.textPrimary,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
   summary: {
     padding: 18,
     borderRadius: 22,
