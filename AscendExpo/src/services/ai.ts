@@ -1,16 +1,33 @@
 import type { DailyProgress, FutureSelfProfile, NarrativeToneKind } from '../types';
 
+export type NarrativeSource = 'groq' | 'fallback';
+export type NarrativeResult = {
+  text: string;
+  source: NarrativeSource;
+};
+
 function buildPrompt(
   profile: FutureSelfProfile,
   tone: NarrativeToneKind,
   metrics: DailyProgress
 ): string {
+  const name = profile.preferredName ?? 'you';
+  const location = profile.locationNow ?? 'not shared';
+  const gender = profile.gender ?? 'not shared';
+  const age = profile.age != null ? `${profile.age}` : 'not shared';
+  const kids = profile.hasKids ?? 'not shared';
+  const workRole = profile.workRole ?? 'not shared';
+  const workFeeling = profile.workFeeling ?? 'not shared';
+  const recentBuild = profile.recentBuild ?? 'not shared';
+  const selfDesc = profile.selfDescription ?? 'not shared';
+  const shapingEvent = profile.shapingEvent ?? 'not shared';
+  const struggle = profile.currentStruggle ?? 'not shared';
+  const importantPeople = profile.mostImportantPeople ?? 'not shared';
+  const manifestation = profile.manifestation ?? 'not shared';
+  const whyImportant = profile.whyImportant ?? 'not shared';
+
   const goals = profile.goals.join(', ');
   const income = `₹ annual target ${Math.round(profile.incomeTargetAnnualINR)}`;
-  const currentIncome = profile.currentIncomeMonthlyINR
-    ? `₹${Math.round(profile.currentIncomeMonthlyINR).toLocaleString('en-IN')} / month`
-    : 'not shared';
-  const moneyMethod = profile.incomeMethod ?? 'not shared';
   const lifestyle = profile.lifestyleTags.join(', ');
   const traits = profile.personalityTraits.join(', ');
   const fears = profile.fears.join(', ');
@@ -20,7 +37,7 @@ function buildPrompt(
   const partnerTraits = (profile.idealPartnerTraits ?? []).join(', ') || 'not shared';
   const settlementVision = profile.settlementVision ?? 'not shared';
 
-  return `You are a premium visualization coach. Generate a vivid second-person narrative (800–1200 words) for someone building their future self in India.
+  return `You are a premium visualization coach. Generate a vivid second-person narrative designed to be ~4 minutes spoken aloud (roughly 520–650 words) for someone building their future self in India.
 
 Tone mode: ${tone}
 
@@ -28,6 +45,7 @@ The user’s inputs below are for internal grounding only. Do not echo them as a
 
 Guidance:
 - Second person POV: use “you”.
+- Start immediately inside a sensory scene the user can inhabit (no long preface). Within the first 2–3 sentences, anchor: place, time of day, body sensation, one concrete object.
 - Make the narrative feel like the future self is speaking with subtle reassurance and specific, emotionally grounded details.
 - Use zodiac to shape communication rhythm and micro-behavior (pace, emphasis, tone), but do NOT mention “your zodiac sign” explicitly or rely on stereotypes.
 - Use money/lifestyle/relationship/settlement details to create lived sensory scenes (morning routine, work sessions, partner moments, city atmosphere).
@@ -37,10 +55,22 @@ Guidance:
 - Keep sentence structure suitable for subtitles and TTS: clear sentence endings, not extremely long sentences.
 
 User inputs (internal use only):
+- Preferred name to use in voice: ${name}
+- Location now: ${location}
+- Gender: ${gender}
+- Age: ${age}
+- Kids: ${kids}
+- Work: ${workRole}
+- Feelings about work: ${workFeeling}
+- Recently built: ${recentBuild}
+- Self description: ${selfDesc}
+- Shaping experience: ${shapingEvent}
+- Current struggle: ${struggle}
+- Most important people: ${importantPeople}
+- What they want most (manifestation): ${manifestation}
+- Why it matters: ${whyImportant}
 - Life focus areas: ${goals}
 - Income target: ${income}
-- Current income baseline: ${currentIncome}
-- Money path: ${moneyMethod}
 - Lifestyle vision tags: ${lifestyle}
 - Personality traits to amplify: ${traits}
 - Friction / fears: ${fears}
@@ -63,12 +93,13 @@ export async function generateVisualizationNarrative(
   profile: FutureSelfProfile,
   tone: NarrativeToneKind,
   metrics: DailyProgress
-): Promise<string> {
+): Promise<NarrativeResult> {
   const groqKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
-  if (!groqKey) return localFallback(profile, tone, metrics);
+  if (!groqKey) return { text: localFallback(profile, tone, metrics), source: 'fallback' };
 
   const baseURL = 'https://api.groq.com/openai/v1/chat/completions';
-  const model = process.env.EXPO_PUBLIC_GROQ_MODEL ?? 'llama3-8b-8192';
+  // Groq deprecated `llama3-8b-8192`; recommended replacement is `llama-3.1-8b-instant`.
+  const model = process.env.EXPO_PUBLIC_GROQ_MODEL ?? 'llama-3.1-8b-instant';
 
   const res = await fetch(baseURL, {
     method: 'POST',
@@ -87,15 +118,29 @@ export async function generateVisualizationNarrative(
   });
 
   if (!res.ok) {
-    return localFallback(profile, tone, metrics);
+    // Helpful runtime signal (web/dev): open DevTools → Console to see why Groq rejected the request.
+    let detail = '';
+    try {
+      detail = await res.text();
+    } catch {
+      detail = '';
+    }
+    // Avoid printing secrets. (We don't log the Authorization header.)
+    console.warn('[Ascend][Groq] Non-2xx response', {
+      status: res.status,
+      statusText: res.statusText,
+      model,
+      detail: detail?.slice(0, 800),
+    });
+    return { text: localFallback(profile, tone, metrics), source: 'fallback' };
   }
 
   const data = (await res.json()) as {
     choices?: { message?: { content?: string } }[];
   };
   const text = data.choices?.[0]?.message?.content?.trim();
-  if (!text) return localFallback(profile, tone, metrics);
-  return text;
+  if (!text) return { text: localFallback(profile, tone, metrics), source: 'fallback' };
+  return { text, source: 'groq' };
 }
 
 function localFallback(
@@ -103,6 +148,18 @@ function localFallback(
   tone: NarrativeToneKind,
   metrics: DailyProgress
 ): string {
+  const name = profile.preferredName?.trim() || 'you';
+  const location = profile.locationNow?.trim() || 'your city';
+  const gender = profile.gender?.trim() || 'your identity';
+  const age = profile.age != null ? `${profile.age}` : 'this season of life';
+  const hasKids = profile.hasKids?.trim() || 'your family reality';
+  const workRole = profile.workRole?.trim() || 'your current work';
+  const workFeeling = profile.workFeeling?.trim() || 'mixed feelings';
+  const recentBuild = profile.recentBuild?.trim() || 'small proof of momentum';
+  const selfDescription = profile.selfDescription?.trim() || 'someone learning to trust their own pace';
+  const shapingEvent = profile.shapingEvent?.trim() || 'a hard chapter that taught resilience';
+  const currentStruggle = profile.currentStruggle?.trim() || 'old patterns that still pull at times';
+  const importantPeople = profile.mostImportantPeople?.trim() || 'the people you love';
   const focus = profile.goals.join(', ');
   const tags = profile.lifestyleTags.join(', ');
   const traits = profile.personalityTraits.join(', ');
@@ -111,18 +168,12 @@ function localFallback(
   const relationship = profile.relationshipStatus ?? 'open-hearted';
   const partner = (profile.idealPartnerTraits ?? []).join(', ') || 'supportive and aligned';
   const settlement = profile.settlementVision ?? 'a city that expands your growth';
-  const moneyPath = profile.incomeMethod ?? 'a path that compounds your strengths';
-  const currentIncome =
-    profile.currentIncomeMonthlyINR != null
-      ? `₹${Math.round(profile.currentIncomeMonthlyINR).toLocaleString('en-IN')} per month`
-      : 'steady income that keeps you safe';
-  const incomeTarget = profile.incomeTargetAnnualINR
-    ? `your target that feels inevitable`
-    : 'a generational horizon';
+  const manifestation = profile.manifestation ?? `${focus}—the version of you that finally feels inevitable`;
+  const whyImportant = profile.whyImportant ?? 'because you are done living below your potential';
 
   const opener =
     tone === 'empowering'
-      ? `You wake up and the air feels different—like a quiet agreement you kept. The life you’ve been aiming at is already forming in your routines, and you can feel it in the steadiness of your breath.`
+      ? `You wake up and the air feels different—like a quiet agreement you kept. ${name}, the life you’ve been aiming at is already forming in your routines, and you can feel it in the steadiness of your breath.`
       : tone === 'confrontational'
         ? `You remember the days you almost quit. Not dramatically. Just quietly. And you feel the moment you chose discipline anyway—because you are not here to bargain with yourself anymore.`
         : tone === 'supportive'
@@ -134,13 +185,19 @@ function localFallback(
       ? `Missed days aren’t a verdict. They’re friction you can learn from. You notice the pattern, and then you change it—today, in small ways that actually stick.`
       : `Your streak is not a trophy. It’s evidence. It proves you can steer your attention, even when nobody is watching.`;
 
-  const body = `Picture your mornings in a life that matches what you described: ${tags}. Your ${zodiac} nature shapes your pace—you notice the urge to escape, and you stay present just long enough to move. You lead with ${traits}, not as a performance, but as a natural response to the person you’re becoming.
+  const body = `${name}, imagine this clearly. You are ${selfDescription}. You live in ${location}. You move through ${age} with grounded intent. Your ${gender} expression feels authentic, and ${hasKids} is held with care, not chaos.
 
-Your income doesn’t feel random now. It feels like something you cultivate—${currentIncome} right now, and a trajectory that keeps climbing toward ${incomeTarget}. Even when fear shows up—${fears}—you don’t debate it. You answer with the next right step, the one you can repeat.
+At work, in ${workRole}, you no longer drift. Even when it feels like ${workFeeling}, you return to structure. You remember what you built recently—${recentBuild}—and you use it as evidence that momentum is real.
+
+Picture your mornings in a life that matches what you described: ${tags}. Your ${zodiac} nature shapes your pace—you notice the urge to escape, and you stay present just long enough to move. You lead with ${traits}, not as a performance, but as a natural response to the person you’re becoming.
+
+What you want most—${manifestation}—stops feeling like a wish and starts feeling like a direction. And the reason it matters—${whyImportant}—becomes your anchor when the day tries to pull you back into old habits. Even when fear shows up—${fears}—or you feel ${currentStruggle}, you don’t debate it. You answer with the next right step, the one you can repeat.
 
 In love, your standards are quiet but clear. With ${relationship} energy, you don’t chase reassurance—you create safety. A partner who matches ${partner} feels close in the small moments: the check-in that doesn’t feel forced, the presence that doesn’t try to fix, the warmth that feels earned.
 
-And in the place you want to settle—${settlement}—your life has a rhythm. You can hear it in the city air, feel it in your body, and sense it in your choices: steady, deliberate, and yours.
+And in the place you want to settle—${settlement}—your life has a rhythm. You can hear it in the city air, feel it in your body, and sense it in your choices: steady, deliberate, and yours. The people who matter most—${importantPeople}—feel that shift in you before you say a word.
+
+Even the chapter that shaped you—${shapingEvent}—is no longer just pain to carry. It becomes wisdom you walk with.
 
 When doubt rises, you breathe like someone who has practiced returning to center. Then you open your eyes and carry one scene with you—the sound of your future morning, the steadiness in your hands, and the subtle message that says: you’re already doing it.`;
 

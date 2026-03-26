@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Speech from 'expo-speech';
 import * as Haptics from 'expo-haptics';
+import { Audio } from 'expo-av';
 import { GradientBackground } from '../components/GradientBackground';
 import { theme } from '../theme';
 import { useApp } from '../context/AppContext';
@@ -23,10 +24,11 @@ import type { RootStackParamList } from '../types';
 import { generateVisualizationNarrative } from '../services/ai';
 import { toneForBehavior } from '../services/feedback';
 import { dayKey } from '../services/tasks';
+import { ambienceUrl, pickAmbience } from '../services/ambience';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Player'>;
 
-const SESSION_SECONDS = 7 * 60;
+const SESSION_SECONDS = 4 * 60;
 
 function splitSentences(text: string): string[] {
   const normalized = text.replace(/\n/g, ' ');
@@ -48,6 +50,7 @@ export default function PlayerScreen() {
   const [voice, setVoice] = useState(true);
   const [tone, setTone] = useState('neutral');
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [narrativeSource, setNarrativeSource] = useState<'groq' | 'fallback'>('fallback');
 
   const sentences = useMemo(() => splitSentences(narrative), [narrative]);
   const progress = sentences.length ? (currentIndex + 1) / sentences.length : 0;
@@ -59,6 +62,7 @@ export default function PlayerScreen() {
   const recorded = useRef(false);
   const speechQueueIndex = useRef(0);
   const finishedRef = useRef(false);
+  const ambienceRef = useRef<Audio.Sound | null>(null);
 
   useEffect(() => {
     Animated.loop(
@@ -96,14 +100,16 @@ export default function PlayerScreen() {
       const t = toneForBehavior(dailyProgress, completed, todayTasks.length);
       setTone(t);
       try {
-        const text = await generateVisualizationNarrative(profile, t, dailyProgress);
+        const result = await generateVisualizationNarrative(profile, t, dailyProgress);
         if (cancelled) return;
-        setNarrative(text);
+        setNarrative(result.text);
+        setNarrativeSource(result.source);
         setPhase('playing');
         await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
       } catch {
         if (cancelled) return;
         setNarrative('');
+        setNarrativeSource('fallback');
         setPhase('playing');
       }
     })();
@@ -111,6 +117,41 @@ export default function PlayerScreen() {
       cancelled = true;
     };
   }, [profile, dailyProgress, todayTasks]);
+
+  useEffect(() => {
+    if (!profile) return;
+    if (phase !== 'playing') return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        // Stop any previous ambience.
+        if (ambienceRef.current) {
+          await ambienceRef.current.stopAsync();
+          await ambienceRef.current.unloadAsync();
+          ambienceRef.current = null;
+        }
+
+        const kind = pickAmbience(profile);
+        const url = ambienceUrl(kind);
+        const { sound } = await Audio.Sound.createAsync(
+          { uri: url },
+          { isLooping: true, volume: 0.18, shouldPlay: true }
+        );
+        if (cancelled) {
+          await sound.unloadAsync();
+          return;
+        }
+        ambienceRef.current = sound;
+      } catch {
+        // If ambience fails (network/web/autoplay), we still allow narration to proceed.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [profile, phase]);
 
   useEffect(() => {
     if (phase !== 'playing' || sentences.length === 0 || voice) return;
@@ -247,6 +288,13 @@ export default function PlayerScreen() {
         narrativeTone: tone,
         completed: true,
       });
+      try {
+        if (ambienceRef.current) {
+          await ambienceRef.current.stopAsync();
+          await ambienceRef.current.unloadAsync();
+          ambienceRef.current = null;
+        }
+      } catch {}
     })();
   }, [phase, dailyProgress, updateProgress, appendSession, tone]);
 
@@ -255,6 +303,15 @@ export default function PlayerScreen() {
   const close = () => {
     Speech.stop();
     setIsSpeaking(false);
+    void (async () => {
+      try {
+        if (ambienceRef.current) {
+          await ambienceRef.current.stopAsync();
+          await ambienceRef.current.unloadAsync();
+          ambienceRef.current = null;
+        }
+      } catch {}
+    })();
     navigation.goBack();
   };
 
@@ -278,7 +335,14 @@ export default function PlayerScreen() {
           <Pressable onPress={close} style={styles.iconBtn}>
             <Text style={styles.close}>✕</Text>
           </Pressable>
-          <Text style={styles.voiceLabel}>{isSpeaking ? 'Voice • speaking' : 'Voice'}</Text>
+          <View style={styles.centerMeta}>
+            <Text style={styles.voiceLabel}>{isSpeaking ? 'Voice • speaking' : 'Voice'}</Text>
+            <View style={[styles.sourceBadge, narrativeSource === 'groq' ? styles.sourceGroq : styles.sourceFallback]}>
+              <Text style={styles.sourceBadgeText}>
+                {narrativeSource === 'groq' ? 'Groq AI' : 'Local Fallback'}
+              </Text>
+            </View>
+          </View>
           <Switch value={voice} onValueChange={setVoice} trackColor={{ false: '#333', true: theme.accentCyan }} />
         </View>
 
@@ -359,7 +423,29 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   close: { color: theme.textSecondary, fontSize: 18, fontWeight: '600' },
+  centerMeta: { alignItems: 'center', justifyContent: 'center' },
   voiceLabel: { color: theme.textSecondary, fontSize: 15 },
+  sourceBadge: {
+    marginTop: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  sourceGroq: {
+    backgroundColor: 'rgba(46, 204, 113, 0.18)',
+    borderColor: 'rgba(46, 204, 113, 0.45)',
+  },
+  sourceFallback: {
+    backgroundColor: 'rgba(241, 196, 15, 0.18)',
+    borderColor: 'rgba(241, 196, 15, 0.45)',
+  },
+  sourceBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: theme.textPrimary,
+    letterSpacing: 0.2,
+  },
   orbWrap: { alignItems: 'center', marginVertical: 12 },
   orb: {
     width: 200,
