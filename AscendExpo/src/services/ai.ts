@@ -36,7 +36,7 @@ function buildPrompt(
   const partnerTraits = (profile.idealPartnerTraits ?? []).join(', ') || 'not shared';
   const settlementVision = profile.settlementVision ?? 'not shared';
 
-  return `You are a premium visualization coach. Generate a vivid second-person narrative designed to be exactly one immersive 4-minute session (target 520-650 words, never exceed 650) for someone building their future self in India.
+  return `You are a premium visualization narrator. Generate a vivid second-person “day in the life” scene designed to be exactly one immersive 4-minute session (target 520-650 words, never exceed 650) for someone building their future self in India.
 
 Tone mode: ${tone}
 
@@ -45,8 +45,12 @@ The user’s inputs below are for internal grounding only. Do not echo them as a
 Guidance:
 - Second person POV: use “you”.
 - Start immediately inside a sensory scene the user can inhabit (no long preface). Within the first 2–3 sentences, anchor: place, time of day, body sensation, one concrete object.
-- The script should feel time-guided: opening arrival, deepening focus, and grounded closeout for immediate action after this 4-minute session.
-- Make the narrative feel like the future self is speaking with subtle reassurance and specific, emotionally grounded details.
+- This MUST feel like a narrated “day in your future life” with a beginning, middle, and end. Do not write generic motivation. Do not write aphorisms or quotes.
+- Use a natural day arc in 3 movements: morning (arrival + identity), midday (busy/impactful work + money/leadership), evening (love/home/meaning + calm close).
+- Make the day feel busy in a satisfying way: meetings, deep work blocks, messages, travel, training, creative flow—specific but not brand-heavy.
+- Luxury should be shown through sensory details (space, time freedom, calm service, quality, travel, quiet confidence), not named luxury brands.
+- Include 1–2 spontaneous life moments that make success feel emotionally real (for example: gifting your mother something meaningful, hosting friends on a weekend trip, upgrading your home, treating family to travel). Keep these moments naturally woven into the story, not as separate “sections.”
+- Make the narrative feel like an intimate narrator describing you after you’ve arrived—like someone watching your day, or your future self describing it. Keep it cinematic and specific.
 - Use zodiac to shape communication rhythm and micro-behavior (pace, emphasis, tone), but do NOT mention “your zodiac sign” explicitly or rely on stereotypes.
 - Use money/lifestyle/relationship/settlement details to create lived sensory scenes (morning routine, work sessions, partner moments, city atmosphere).
 - If tone is confrontational, reference skipped days in a compassionate but direct way (“You remember the day you almost quit, and you didn’t.”). Still end with a path forward.
@@ -54,7 +58,7 @@ Guidance:
 - No bullet points. Paragraphs only. No headings. No quotes used as formatting.
 - Keep sentence structure suitable for subtitles and TTS: clear sentence endings, not extremely long sentences.
 - Use mostly present tense. Keep momentum words active and embodied (breathe, notice, choose, move, return, commit).
-- End with a short present-tense lock-in: one concrete action the user will take right after this session.
+- End with a grounded closeout for immediate action after this 4-minute session: one concrete action the user will take right after listening (small, specific, repeatable).
 
 User inputs (internal use only):
 - Preferred name to use in voice: ${name}
@@ -177,33 +181,41 @@ function localFallback(
 
   const opener =
     tone === 'empowering'
-      ? `You wake up and the air feels different—like a quiet agreement you kept. ${name}, the life you’ve been aiming at is already forming in your routines, and you can feel it in the steadiness of your breath.`
+      ? `Morning arrives and you’re already moving. ${name}, the day feels full in a good way—clear, intentional, expensive in the currency of calm.`
       : tone === 'confrontational'
-        ? `You remember the days you almost quit. Not dramatically. Just quietly. And you feel the moment you chose discipline anyway—because you are not here to bargain with yourself anymore.`
+        ? `Morning arrives and you remember the days you almost quit. Not dramatically. Just quietly. And you feel the moment you chose discipline anyway—because you are not here to bargain with yourself anymore.`
         : tone === 'supportive'
-          ? `If today felt heavier than you expected, you don’t punish yourself. You return gently—because the future you want is built from repairs, not from perfect straight lines.`
-          : `Close your eyes. The room softens. You step forward in your mind with the same calm you bring to your real life—one honest action at a time.`;
+          ? `Morning arrives, gentle. If yesterday felt heavier than you expected, you don’t punish yourself. You return, and the return is the whole skill.`
+          : `Morning arrives. The room softens. Your breath deepens. You step into a day that fits you.`;
 
   const behavior =
     metrics.missedDays > 0
       ? `Missed days aren’t a verdict. They’re friction you can learn from. You notice the pattern, and then you change it—today, in small ways that actually stick.`
       : `Your streak is not a trophy. It’s evidence. It proves you can steer your attention, even when nobody is watching.`;
 
-  const body = `${name}, imagine this clearly. You are ${selfDescription}. You live in ${location}. You move through ${age} with grounded intent. Your ${gender} expression feels authentic, and ${hasKids} is held with care, not chaos.
+  const body = `${name}, imagine this clearly. It’s a real day in your future life. You are ${selfDescription}. You live in ${location}. You move through ${age} with grounded intent. Your ${gender} expression feels authentic, and ${hasKids} is held with care, not chaos.
 
-At work, in ${workRole}, you no longer drift. You return to structure, and your standards rise quietly in the things only you notice.
+You wake up in a space that feels like relief. Light spills across a clean surface. A glass of water waits where you always leave it. Your phone is already full, but it doesn’t own you. You choose the first ten minutes. You breathe. You stretch. You feel the quiet power in your chest that comes from doing this enough times.
 
-Picture your mornings in a life that matches what you described: ${tags}. Your ${zodiac} nature shapes your pace—you notice the urge to escape, and you stay present just long enough to move. You lead with ${traits}, not as a performance, but as a natural response to the person you’re becoming.
+Your morning looks like the life you asked for—${tags}. Not flashy. Just unmistakably higher quality. You move with ${traits}. You notice the impulse to rush, and you choose precision instead. The city air feels different when you’re not trying to prove anything.
+
+Midday is busy. The kind of busy you once thought you could never hold. In ${workRole}, you’re the person people wait for before they decide. Your calendar has weight. Your work has consequences. You enter a meeting and the room settles without you asking. You speak with calm, and it lands. Money is handled like logistics now, not like emotion. You see it in the small choices: you don’t bargain with your standards. You don’t delay the hard call. You move.
+
+In between calls, life reminds you why this matters. It’s your mother’s birthday week, and you finalize a gift she once pointed at and laughed away as too much. This time, you don’t overthink. You just send it. Later, her voice note is soft and disbelieving, and you listen to it twice.
+
+By late afternoon, plans lock in for a weekend break. Friends in the group chat, travel details done in minutes, not months. Maybe it’s a short yacht day, maybe it’s a quiet coastal stay, maybe it’s a city escape with good food and no rush. The point is not showing off. The point is you built a life where joy fits without permission.
 
 What you want most—${manifestation}—stops feeling like a wish and starts feeling like a direction. Even when fear shows up—${fears}—you don’t debate it. You answer with the next right step, the one you can repeat.
 
-In love, your standards are quiet but clear. With ${relationship} energy, you don’t chase reassurance—you create safety. A partner who matches ${partner} feels close in the small moments: the check-in that doesn’t feel forced, the presence that doesn’t try to fix, the warmth that feels earned.
+Evening slows the day down without collapsing it. In love, your standards are quiet but clear. With ${relationship} energy, you don’t chase reassurance—you create safety. A partner who matches ${partner} feels close in the small moments: the check-in that doesn’t feel forced, the presence that doesn’t try to fix, the warmth that feels earned.
 
 And in the place you want to settle—${settlement}—your life has a rhythm. You can hear it in the city air, feel it in your body, and sense it in your choices: steady, deliberate, and yours. The people who matter most—${importantPeople}—feel that shift in you before you say a word.
 
 Even the chapter that shaped you—${shapingEvent}—is no longer just pain to carry. It becomes wisdom you walk with.
 
-When doubt rises, you breathe like someone who has practiced returning to center. Then you open your eyes and carry one scene with you—the sound of your future morning, the steadiness in your hands, and the subtle message that says: you’re already doing it.`;
+When doubt rises, you breathe like someone who has practiced returning to center. Then you open your eyes and carry one scene with you—the sound of your future morning, the steadiness in your hands, and the subtle message that says: you’re already doing it.
+
+Now, when this ends, do one small real thing. Open your notes. Write one sentence: what matters today. Then set a 20-minute timer and start.`;
 
   return normalizeNarrativeLength([opener, behavior, body].join('\n\n'));
 }
