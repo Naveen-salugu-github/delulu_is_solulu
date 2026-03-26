@@ -158,7 +158,7 @@ export default function OnboardingScreen() {
           {step === 0 && (
             <View>
               <Text style={styles.appName}>ASCEND</Text>
-              <Text style={styles.hero}>Welcome to talk with your future self and manifest your way there.</Text>
+              <Text style={styles.hero}>Meet your future self, and begin manifesting your way there.</Text>
               <Text style={styles.body}>
                 Before we begin, I have a few questions. The more detail you give, the better the app experience.
                 Everything you share is completely confidential.
