@@ -13,8 +13,10 @@ Cross-platform version of **Ascend**: onboarding, home dashboard, visualization 
 ```bash
 cd AscendExpo
 npm install
-npx expo start
+npm run start
 ```
+
+Use **`npm run start`** (not a bare `expo` command). If `npx expo start` fails with `'expo' is not recognized`, your PATH is fine—`npm` runs the local CLI from `node_modules`. The scripts in `package.json` call Expo via `node` so they work without a global `expo` install.
 
 Then:
 
