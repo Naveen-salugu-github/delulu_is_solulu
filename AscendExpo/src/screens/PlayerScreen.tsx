@@ -106,17 +106,34 @@ export default function PlayerScreen() {
   const voiceOffTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recorded = useRef(false);
 
+  const [speechProgress, setSpeechProgress] = useState(0);
+  const progressRafRef = useRef<number | null>(null);
+  const lastProgressRef = useRef(0);
+
+  const cancelProgressRaf = useCallback(() => {
+    if (progressRafRef.current != null) {
+      cancelAnimationFrame(progressRafRef.current);
+      progressRafRef.current = null;
+    }
+  }, []);
+
+  const nowMs = () => {
+    const perf = globalThis.performance;
+    return perf && typeof perf.now === 'function' ? perf.now() : Date.now();
+  };
+
+  const estimateParagraphDurationMs = (wordCount: number) => {
+    const wc = Math.max(1, wordCount);
+    const msPerWord = Math.max(220, Math.min(380, Math.floor(60000 / (wc * 2.2))));
+    return Math.max(2500, msPerWord * wc);
+  };
+
   const currentWords = useMemo(() => {
     const p = paragraphs[paraIndex] ?? '';
     return p.trim().split(/\s+/).filter(Boolean);
   }, [paragraphs, paraIndex]);
 
-  const progress = useMemo(() => {
-    if (paragraphs.length === 0) return 0;
-    const w = currentWords.length || 1;
-    const frac = Math.min(1, wordsShownInPara / w);
-    return (paraIndex + frac) / paragraphs.length;
-  }, [paragraphs.length, paraIndex, wordsShownInPara, currentWords.length]);
+  const progress = speechProgress;
 
   const displayText = useMemo(() => {
     const prev = paragraphs.slice(0, paraIndex).join('\n\n');
@@ -307,6 +324,8 @@ export default function PlayerScreen() {
       finishedRef.current = true;
       setIsSpeaking(false);
       clearWordTick();
+      cancelProgressRaf();
+      setSpeechProgress(1);
       setPhase('done');
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       return;
@@ -318,6 +337,33 @@ export default function PlayerScreen() {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     startWordTickForParagraph(words.length);
     setIsSpeaking(true);
+
+    const paraCount = paras.length;
+    const baseProgress = idx / paraCount;
+    const paraProgressSpan = 1 / paraCount;
+
+    const startProgressRaf = (expectedMs: number) => {
+      cancelProgressRaf();
+      setSpeechProgress(baseProgress);
+      lastProgressRef.current = baseProgress;
+      const start = nowMs();
+      progressRafRef.current = requestAnimationFrame(function tick() {
+        const elapsed = nowMs() - start;
+        const frac = Math.min(1, elapsed / Math.max(1, expectedMs));
+        const next = baseProgress + frac * paraProgressSpan;
+
+        if (Math.abs(next - lastProgressRef.current) > 0.002) {
+          lastProgressRef.current = next;
+          setSpeechProgress(next);
+        }
+
+        if (frac < 1 && !isClosingRef.current && !finishedRef.current) {
+          progressRafRef.current = requestAnimationFrame(tick);
+        }
+      });
+    };
+
+    startProgressRaf(estimateParagraphDurationMs(words.length));
 
     Animated.sequence([
       Animated.timing(respondScale, {
@@ -336,6 +382,8 @@ export default function PlayerScreen() {
 
     const onParaDone = () => {
       clearWordTick();
+      cancelProgressRaf();
+      setSpeechProgress((idx + 1) / paras.length);
       setWordsShownInPara(words.length);
       setIsSpeaking(false);
       setParaIndex((p) => p + 1);
@@ -344,6 +392,7 @@ export default function PlayerScreen() {
     if (!voiceRef.current || !text) {
       if (voiceOffTimerRef.current) clearTimeout(voiceOffTimerRef.current);
       const dur = Math.max(2500, words.length * 420);
+      startProgressRaf(dur);
       voiceOffTimerRef.current = setTimeout(() => {
         if (isClosingRef.current) return;
         onParaDone();
@@ -372,20 +421,29 @@ export default function PlayerScreen() {
   useEffect(() => {
     if (phase !== 'playing' || paragraphs.length === 0) return;
     finishedRef.current = false;
+    if (paraIndex === 0) {
+      cancelProgressRaf();
+      lastProgressRef.current = 0;
+      setSpeechProgress(0);
+    }
     runParagraphSpeech.current();
-  }, [phase, paraIndex, paragraphs.length]);
+  }, [phase, paraIndex, paragraphs.length, cancelProgressRaf]);
 
   useEffect(() => {
-    if (phase !== 'playing') clearWordTick();
-  }, [phase, clearWordTick]);
+    if (phase !== 'playing') {
+      clearWordTick();
+      cancelProgressRaf();
+    }
+  }, [phase, clearWordTick, cancelProgressRaf]);
 
   useEffect(() => {
     return () => {
       clearWordTick();
       if (voiceOffTimerRef.current) clearTimeout(voiceOffTimerRef.current);
       Speech.stop();
+      cancelProgressRaf();
     };
-  }, [clearWordTick]);
+  }, [clearWordTick, cancelProgressRaf]);
 
   useEffect(() => {
     if (phase !== 'done' || recorded.current) return;
@@ -426,6 +484,8 @@ export default function PlayerScreen() {
     isClosingRef.current = true;
     finishedRef.current = true;
     clearWordTick();
+    cancelProgressRaf();
+    setSpeechProgress(0);
     if (introTimerRef.current) clearTimeout(introTimerRef.current);
     if (voiceOffTimerRef.current) clearTimeout(voiceOffTimerRef.current);
     Speech.stop();
