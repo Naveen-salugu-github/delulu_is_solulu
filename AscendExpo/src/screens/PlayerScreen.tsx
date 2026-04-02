@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   Animated,
   Easing,
   Switch,
+  Platform,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -23,25 +24,38 @@ import { GradientBackground } from '../components/GradientBackground';
 import { theme } from '../theme';
 import { useApp } from '../context/AppContext';
 import type { RootStackParamList } from '../types';
-import { generateVisualizationNarrative } from '../services/ai';
-import { toneForBehavior } from '../services/feedback';
 import { dayKey } from '../services/tasks';
 import { ambienceSource, pickAmbience } from '../services/ambience';
+import {
+  computeEmotionalState,
+  invalidateEmotionalStateCache,
+  sessionOpeningLine,
+  type EmotionalState,
+} from '../services/EmotionalStateEngine';
+import { generateFutureSelfScript, splitScriptIntoParagraphs } from '../services/FutureSelfScriptService';
+import { appendVoiceSession } from '../services/SessionHistoryService';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Player'>;
-
-const SESSION_SECONDS = 4 * 60;
 
 type AmbienceChoice = 'off' | 'auto' | 'rain' | 'waves' | 'wind' | 'birds';
 const AMBIENCE_ORDER: AmbienceChoice[] = ['off', 'auto', 'rain', 'waves', 'wind', 'birds'];
 
-function splitSentences(text: string): string[] {
-  const normalized = text.replace(/\n/g, ' ');
-  const parts = normalized
-    .split('. ')
-    .map((s) => s.trim())
-    .filter(Boolean);
-  return parts.map((s) => (s.endsWith('.') ? s : `${s}.`));
+const INTRO_MS = 2000;
+const SAMANTHA_ID = 'com.apple.ttsbundle.Samantha-compact';
+
+function computeEmotionalStateSyncLocal(p: import('../types').DailyProgress): EmotionalState {
+  const tone =
+    p.streakDays <= 2 || p.missedDays >= 2
+      ? 'urgent'
+      : p.streakDays >= 7 && p.missedDays === 0
+        ? 'proud'
+        : 'supportive';
+  return {
+    tone,
+    streakScore: p.streakDays,
+    lastUpdated: new Date().toISOString(),
+    missedRecently: p.missedDays >= 1,
+  };
 }
 
 export default function PlayerScreen() {
@@ -49,30 +63,54 @@ export default function PlayerScreen() {
   const { userProfile, dailyProgress, todayTasks, updateProgress, appendSession } = useApp();
   const profile = userProfile?.futureSelf;
 
-  const [phase, setPhase] = useState<'loading' | 'playing' | 'done'>('loading');
-  const [narrative, setNarrative] = useState('');
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [phase, setPhase] = useState<'loading' | 'intro' | 'playing' | 'done'>('loading');
+  const [emotionalState, setEmotionalState] = useState<EmotionalState | null>(null);
+  const [script, setScript] = useState('');
+  const [scriptSource, setScriptSource] = useState<'groq' | 'fallback'>('fallback');
+  const [paragraphs, setParagraphs] = useState<string[]>([]);
+  const [paraIndex, setParaIndex] = useState(0);
+  const [wordsShownInPara, setWordsShownInPara] = useState(0);
   const [voice, setVoice] = useState(true);
-  const [tone, setTone] = useState('neutral');
+  const voiceRef = useRef(voice);
+  voiceRef.current = voice;
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [narrativeSource, setNarrativeSource] = useState<'groq' | 'fallback'>('fallback');
   const [ambienceChoice, setAmbienceChoice] = useState<AmbienceChoice>('auto');
   const [ambienceVolume, setAmbienceVolume] = useState(0.35);
   const [ambienceError, setAmbienceError] = useState(false);
 
-  const sentences = useMemo(() => splitSentences(narrative), [narrative]);
-  const progress = sentences.length ? (currentIndex + 1) / sentences.length : 0;
-
   const pulse = useRef(new Animated.Value(1)).current;
   const respondScale = useRef(new Animated.Value(1)).current;
   const glow = useRef(new Animated.Value(0.42)).current;
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const recorded = useRef(false);
-  const speechQueueIndex = useRef(0);
-  const finishedRef = useRef(false);
   const ambienceRef = useRef<Audio.Sound | null>(null);
   const isClosingRef = useRef(false);
   const hasStartedSessionRef = useRef(false);
+  const finishedRef = useRef(false);
+  const voiceIdRef = useRef<string | undefined>(undefined);
+  const voiceLangRef = useRef<string>('en-US');
+  const wordTickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const introTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const voiceOffTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recorded = useRef(false);
+
+  const currentWords = useMemo(() => {
+    const p = paragraphs[paraIndex] ?? '';
+    return p.trim().split(/\s+/).filter(Boolean);
+  }, [paragraphs, paraIndex]);
+
+  const progress = useMemo(() => {
+    if (paragraphs.length === 0) return 0;
+    const w = currentWords.length || 1;
+    const frac = Math.min(1, wordsShownInPara / w);
+    return (paraIndex + frac) / paragraphs.length;
+  }, [paragraphs.length, paraIndex, wordsShownInPara, currentWords.length]);
+
+  const displayText = useMemo(() => {
+    const prev = paragraphs.slice(0, paraIndex).join('\n\n');
+    const cur = currentWords.slice(0, wordsShownInPara).join(' ');
+    if (!prev) return cur;
+    if (!cur) return prev;
+    return `${prev}\n\n${cur}`;
+  }, [paragraphs, paraIndex, currentWords, wordsShownInPara]);
 
   useEffect(() => {
     Animated.loop(
@@ -94,7 +132,6 @@ export default function PlayerScreen() {
   }, [pulse]);
 
   useEffect(() => {
-    // Ensure device/browser audio can play under narration (including silent mode on iOS).
     void Audio.setAudioModeAsync({
       allowsRecordingIOS: false,
       staysActiveInBackground: false,
@@ -118,72 +155,89 @@ export default function PlayerScreen() {
     if (hasStartedSessionRef.current) return;
     hasStartedSessionRef.current = true;
     let cancelled = false;
-    (async () => {
-      const completed = todayTasks.filter((t) => t.isCompleted).length;
-      const t = toneForBehavior(dailyProgress, completed, todayTasks.length);
-      setTone(t);
+
+    void (async () => {
       try {
-        const result = await generateVisualizationNarrative(profile, t, dailyProgress);
+        const state = await computeEmotionalState();
+        const scriptResult = await generateFutureSelfScript(profile, state.tone, dailyProgress);
         if (cancelled || isClosingRef.current) return;
-        setNarrative(result.text);
-        setNarrativeSource(result.source);
-        setPhase('playing');
-        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+
+        setEmotionalState(state);
+        setScript(scriptResult.text);
+        setScriptSource(scriptResult.source);
+        setParagraphs(splitScriptIntoParagraphs(scriptResult.text));
+        setParaIndex(0);
+        setWordsShownInPara(0);
+        setPhase('intro');
+
+        const voices = await Speech.getAvailableVoicesAsync();
+        const samantha = voices.find((v) => v.identifier === SAMANTHA_ID);
+        const en = voices.find((v) => v.language?.startsWith('en')) ?? voices[0];
+        if (Platform.OS === 'ios' && samantha) {
+          voiceIdRef.current = samantha.identifier;
+          voiceLangRef.current = samantha.language ?? 'en-US';
+        } else if (en) {
+          voiceIdRef.current = en.identifier;
+          voiceLangRef.current = en.language ?? 'en-US';
+        }
+
+        introTimerRef.current = setTimeout(() => {
+          if (cancelled || isClosingRef.current) return;
+          setPhase('playing');
+        }, INTRO_MS);
       } catch {
         if (cancelled || isClosingRef.current) return;
-        setNarrative('');
-        setNarrativeSource('fallback');
-        setPhase('playing');
+        const state = computeEmotionalStateSyncLocal(dailyProgress);
+        setEmotionalState(state);
+        const r = await generateFutureSelfScript(profile, state.tone, dailyProgress);
+        setScript(r.text);
+        setScriptSource(r.source);
+        setParagraphs(splitScriptIntoParagraphs(r.text));
+        setPhase('intro');
+        introTimerRef.current = setTimeout(() => {
+          if (!isClosingRef.current) setPhase('playing');
+        }, INTRO_MS);
       }
     })();
+
     return () => {
       cancelled = true;
+      if (introTimerRef.current) clearTimeout(introTimerRef.current);
     };
-  }, [profile, dailyProgress, todayTasks.length]);
+  }, [profile, dailyProgress]);
 
   useEffect(() => {
     if (!profile) return;
-    if (phase !== 'playing') return;
+    if (phase !== 'playing' && phase !== 'intro') return;
 
     let cancelled = false;
-    (async () => {
+    void (async () => {
       try {
         setAmbienceError(false);
-        // Stop any previous ambience.
         if (ambienceRef.current) {
           await ambienceRef.current.stopAsync();
           await ambienceRef.current.unloadAsync();
           ambienceRef.current = null;
         }
-
-        if (ambienceChoice === 'off') return;
+        if (ambienceChoice === 'off' || phase === 'intro') return;
 
         const kind =
           ambienceChoice === 'auto' ? pickAmbience(profile) : (ambienceChoice as Exclude<AmbienceChoice, 'off' | 'auto'>);
         const source = ambienceSource(kind);
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: false,
-          staysActiveInBackground: false,
-          playsInSilentModeIOS: true,
-          shouldDuckAndroid: true,
-          playThroughEarpieceAndroid: false,
+        const { sound } = await Audio.Sound.createAsync(source, {
+          isLooping: true,
+          volume: ambienceVolume,
+          shouldPlay: true,
         });
-        const { sound } = await Audio.Sound.createAsync(
-          source,
-          { isLooping: true, volume: ambienceVolume, shouldPlay: true }
-        );
         if (cancelled) {
           await sound.unloadAsync();
           return;
         }
         ambienceRef.current = sound;
       } catch {
-        // If ambience fails (network/web/autoplay), narration continues and we show a subtle hint.
         setAmbienceError(true);
-        console.warn('[Ascend][Ambience] Failed to play selected ambience track.');
       }
     })();
-
     return () => {
       cancelled = true;
     };
@@ -192,151 +246,154 @@ export default function PlayerScreen() {
   useEffect(() => {
     void (async () => {
       try {
-        if (ambienceRef.current) {
-          await ambienceRef.current.setVolumeAsync(ambienceVolume);
-        }
-      } catch {
-        // Ignore transient player update errors.
-      }
+        if (ambienceRef.current) await ambienceRef.current.setVolumeAsync(ambienceVolume);
+      } catch {}
     })();
   }, [ambienceVolume]);
 
-  useEffect(() => {
-    if (phase !== 'playing' || sentences.length === 0 || voice) return;
-    const perMs = (SESSION_SECONDS * 1000 * 0.85) / Math.max(sentences.length, 1);
-    if (timerRef.current) clearInterval(timerRef.current);
-    setCurrentIndex(0);
-    setIsSpeaking(false);
-    if (sentences.length <= 1) {
+  const clearWordTick = useCallback(() => {
+    if (wordTickRef.current) {
+      clearInterval(wordTickRef.current);
+      wordTickRef.current = null;
+    }
+  }, []);
+
+  const startWordTickForParagraph = useCallback(
+    (wordCount: number) => {
+      clearWordTick();
+      if (wordCount <= 0) return;
+      const ms = Math.max(220, Math.min(380, Math.floor(60000 / (wordCount * 2.2))));
+      wordTickRef.current = setInterval(() => {
+        setWordsShownInPara((w) => {
+          if (w >= wordCount) {
+            clearWordTick();
+            return w;
+          }
+          return w + 1;
+        });
+      }, ms);
+    },
+    [clearWordTick]
+  );
+
+  const runParagraphSpeech = useRef<() => void>(() => {});
+
+  runParagraphSpeech.current = () => {
+    if (finishedRef.current || isClosingRef.current) return;
+    const paras = paragraphs;
+    const idx = paraIndex;
+    if (idx >= paras.length) {
+      finishedRef.current = true;
+      setIsSpeaking(false);
+      clearWordTick();
       setPhase('done');
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       return;
     }
-    let i = 0;
-    timerRef.current = setInterval(() => {
-      i += 1;
-      const nextIndex = Math.min(sentences.length - 1, i);
-      setCurrentIndex(nextIndex);
-      if (nextIndex === Math.floor(sentences.length / 3) || nextIndex === Math.floor((2 * sentences.length) / 3)) {
-        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      }
-      if (nextIndex > 0 && nextIndex % 5 === 0) {
-        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      }
-      if (nextIndex >= sentences.length - 1) {
-        if (timerRef.current) clearInterval(timerRef.current);
-        setIsSpeaking(false);
-        setPhase('done');
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      }
-    }, perMs);
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [phase, sentences.length, voice]);
 
-  useEffect(() => {
-    if (!voice || phase !== 'playing' || sentences.length === 0) {
+    const text = paras[idx]?.trim() ?? '';
+    const words = text.split(/\s+/).filter(Boolean);
+    setWordsShownInPara(0);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    startWordTickForParagraph(words.length);
+    setIsSpeaking(true);
+
+    Animated.sequence([
+      Animated.timing(respondScale, {
+        toValue: 1.08,
+        duration: 140,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }),
+      Animated.timing(respondScale, {
+        toValue: 1.0,
+        duration: 220,
+        easing: Easing.inOut(Easing.ease),
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    const onParaDone = () => {
+      clearWordTick();
+      setWordsShownInPara(words.length);
       setIsSpeaking(false);
-      void Speech.stop();
+      setParaIndex((p) => p + 1);
+    };
+
+    if (!voiceRef.current || !text) {
+      if (voiceOffTimerRef.current) clearTimeout(voiceOffTimerRef.current);
+      const dur = Math.max(2500, words.length * 420);
+      voiceOffTimerRef.current = setTimeout(() => {
+        if (isClosingRef.current) return;
+        onParaDone();
+      }, dur);
       return;
     }
-    if (timerRef.current) clearInterval(timerRef.current);
+
+    Speech.stop();
+    Speech.speak(text, {
+      language: voiceLangRef.current,
+      voice: voiceIdRef.current,
+      pitch: 1.0,
+      rate: 0.88,
+      volume: 1,
+      onDone: () => {
+        if (isClosingRef.current) return;
+        onParaDone();
+      },
+      onError: () => {
+        if (isClosingRef.current) return;
+        onParaDone();
+      },
+    });
+  };
+
+  useEffect(() => {
+    if (phase !== 'playing' || paragraphs.length === 0) return;
     finishedRef.current = false;
-    speechQueueIndex.current = 0;
-    setCurrentIndex(0);
+    runParagraphSpeech.current();
+  }, [phase, paraIndex, paragraphs.length]);
 
-    let preferredVoice: { identifier?: string; language?: string } | null = null;
-    (async () => {
-      const voices = await Speech.getAvailableVoicesAsync();
-      preferredVoice =
-        voices.find(
-          (v) =>
-            v.language.startsWith('en-IN') &&
-            (v.quality === 'Enhanced' || v.quality === 'Default')
-        ) ?? voices.find((v) => v.language.startsWith('en-')) ?? voices[0] ?? null;
+  useEffect(() => {
+    if (phase !== 'playing') clearWordTick();
+  }, [phase, clearWordTick]);
 
-      const speakNext = async () => {
-        if (finishedRef.current) return;
-        const idx = speechQueueIndex.current;
-        if (idx >= sentences.length) {
-          finishedRef.current = true;
-          setIsSpeaking(false);
-          setPhase('done');
-          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          return;
-        }
-
-        setCurrentIndex(idx);
-        setIsSpeaking(true);
-
-        Animated.sequence([
-          Animated.timing(respondScale, {
-            toValue: 1.08,
-            duration: 140,
-            easing: Easing.out(Easing.ease),
-            useNativeDriver: true,
-          }),
-          Animated.timing(respondScale, {
-            toValue: 1.0,
-            duration: 220,
-            easing: Easing.inOut(Easing.ease),
-            useNativeDriver: true,
-          }),
-        ]).start();
-
-        if (idx === Math.floor(sentences.length / 3) || idx === Math.floor((2 * sentences.length) / 3)) {
-          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        }
-        if (idx > 0 && idx % 5 === 0) {
-          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        }
-
-        speechQueueIndex.current = idx + 1;
-        const sentence = sentences[idx];
-
-        Speech.speak(sentence, {
-          language: preferredVoice?.language ?? 'en-IN',
-          voice: preferredVoice?.identifier,
-          pitch: 1.0,
-          rate: 0.95,
-          volume: 1,
-          onDone: () => {
-            if (isClosingRef.current) return;
-            setIsSpeaking(false);
-            void speakNext();
-          },
-          onError: () => {
-            finishedRef.current = true;
-            setIsSpeaking(false);
-            if (!isClosingRef.current) setPhase('done');
-          },
-        });
-      };
-
-      void speakNext();
-    })();
+  useEffect(() => {
     return () => {
-      setIsSpeaking(false);
-      void Speech.stop();
+      clearWordTick();
+      if (voiceOffTimerRef.current) clearTimeout(voiceOffTimerRef.current);
+      Speech.stop();
     };
-  }, [voice, phase, sentences]);
+  }, [clearWordTick]);
 
   useEffect(() => {
     if (phase !== 'done' || recorded.current) return;
     recorded.current = true;
     void (async () => {
+      const tone = emotionalState?.tone ?? 'supportive';
       const p = { ...dailyProgress };
       p.sessionListens += 1;
       p.lastSessionDayKey = dayKey();
       await updateProgress(p);
+      await invalidateEmotionalStateCache();
+
+      const preview = script.slice(0, 80);
+      await appendVoiceSession({
+        date: new Date().toISOString(),
+        tone,
+        scriptPreview: preview,
+        streakAtTime: dailyProgress.streakDays,
+      });
+
+      const estSeconds = Math.max(60, Math.round(script.split(/\s+/).filter(Boolean).length * 0.35));
       await appendSession({
         id: `${Date.now()}`,
         startedAt: new Date().toISOString(),
-        durationSeconds: SESSION_SECONDS,
+        durationSeconds: estSeconds,
         narrativeTone: tone,
         completed: true,
       });
+
       try {
         if (ambienceRef.current) {
           await ambienceRef.current.stopAsync();
@@ -345,17 +402,14 @@ export default function PlayerScreen() {
         }
       } catch {}
     })();
-  }, [phase, dailyProgress, updateProgress, appendSession, tone]);
-
-  const currentSentence = sentences[currentIndex] ?? '';
+  }, [phase, emotionalState, script, dailyProgress, updateProgress, appendSession]);
 
   const close = () => {
     isClosingRef.current = true;
     finishedRef.current = true;
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
+    clearWordTick();
+    if (introTimerRef.current) clearTimeout(introTimerRef.current);
+    if (voiceOffTimerRef.current) clearTimeout(voiceOffTimerRef.current);
     Speech.stop();
     setIsSpeaking(false);
     void (async () => {
@@ -383,6 +437,7 @@ export default function PlayerScreen() {
     );
   }
 
+  const opening = emotionalState ? sessionOpeningLine(emotionalState) : '';
   const ambienceLabel =
     ambienceChoice === 'off'
       ? 'Off'
@@ -400,11 +455,9 @@ export default function PlayerScreen() {
             <Text style={styles.close}>✕</Text>
           </Pressable>
           <View style={styles.centerMeta}>
-            <Text style={styles.voiceLabel}>{isSpeaking ? 'Voice • speaking' : 'Voice'}</Text>
-            <View style={[styles.sourceBadge, narrativeSource === 'groq' ? styles.sourceGroq : styles.sourceFallback]}>
-              <Text style={styles.sourceBadgeText}>
-                {narrativeSource === 'groq' ? 'Groq AI' : 'Local Fallback'}
-              </Text>
+            <Text style={styles.voiceLabel}>{isSpeaking ? 'Future self • speaking' : 'Future self'}</Text>
+            <View style={[styles.sourceBadge, scriptSource === 'groq' ? styles.sourceGroq : styles.sourceFallback]}>
+              <Text style={styles.sourceBadgeText}>{scriptSource === 'groq' ? 'Groq AI' : 'Offline'}</Text>
             </View>
           </View>
           <Switch value={voice} onValueChange={setVoice} trackColor={{ false: '#333', true: theme.accentCyan }} />
@@ -424,7 +477,7 @@ export default function PlayerScreen() {
             <Text style={styles.ambienceText}>Ambience: {ambienceLabel}</Text>
           </Pressable>
           {ambienceError && ambienceChoice !== 'off' && (
-            <Text style={styles.ambienceHint}>Ambience unavailable on this network/device right now.</Text>
+            <Text style={styles.ambienceHint}>Ambience unavailable on this device right now.</Text>
           )}
           {ambienceChoice !== 'off' && (
             <View style={styles.volumeRow}>
@@ -463,13 +516,19 @@ export default function PlayerScreen() {
         {phase === 'loading' && (
           <View style={styles.centerBlock}>
             <ActivityIndicator color={theme.textPrimary} size="large" />
-            <Text style={styles.loadingText}>Composing your visualization…</Text>
+            <Text style={styles.loadingText}>Your future self is finding the words…</Text>
+          </View>
+        )}
+
+        {phase === 'intro' && (
+          <View style={styles.centerBlock}>
+            <Text style={styles.introText}>{opening}</Text>
           </View>
         )}
 
         {(phase === 'playing' || phase === 'done') && (
           <ScrollView style={styles.textScroll} contentContainerStyle={styles.textContent}>
-            <Text style={styles.narrative}>{phase === 'playing' ? currentSentence : narrative}</Text>
+            <Text style={styles.narrative}>{phase === 'done' ? script : displayText}</Text>
           </ScrollView>
         )}
 
@@ -613,8 +672,15 @@ const styles = StyleSheet.create({
     backgroundColor: theme.accentCyan,
     borderRadius: 2,
   },
-  centerBlock: { alignItems: 'center', marginTop: 24 },
-  loadingText: { marginTop: 12, color: theme.textSecondary, fontSize: 15 },
+  centerBlock: { alignItems: 'center', marginTop: 24, paddingHorizontal: 24 },
+  loadingText: { marginTop: 12, color: theme.textSecondary, fontSize: 15, textAlign: 'center' },
+  introText: {
+    fontSize: 22,
+    fontWeight: '600',
+    color: theme.textPrimary,
+    textAlign: 'center',
+    lineHeight: 32,
+  },
   textScroll: { flex: 1, marginTop: 12 },
   textContent: { paddingHorizontal: 22, paddingBottom: 24 },
   narrative: {

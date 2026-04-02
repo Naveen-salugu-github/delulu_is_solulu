@@ -17,6 +17,7 @@ import type {
 import * as persistence from '../services/persistence';
 import { buildDailyTasks, dayKey } from '../services/tasks';
 import { registerAllTasksCompleted } from '../services/progress';
+import { invalidateEmotionalStateCache } from '../services/EmotionalStateEngine';
 
 type AppContextValue = {
   hydrated: boolean;
@@ -93,6 +94,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setDailyProgress(p);
     progressRef.current = p;
     await persistence.saveDailyProgress(p);
+    await invalidateEmotionalStateCache();
   }, []);
 
   const toggleTask = useCallback(async (taskId: string) => {
@@ -128,6 +130,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setDailyProgress(p);
     progressRef.current = p;
     await persistence.saveDailyProgress(p);
+    await invalidateEmotionalStateCache();
   }, []);
 
   const appendSession = useCallback(async (r: VisualizationSessionRecord) => {
