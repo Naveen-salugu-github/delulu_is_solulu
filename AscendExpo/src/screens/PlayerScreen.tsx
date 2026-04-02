@@ -17,7 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Speech from 'expo-speech';
 import * as Haptics from 'expo-haptics';
-import { Audio } from 'expo-av';
+import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
 import { Ionicons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
 import { GradientBackground } from '../components/GradientBackground';
@@ -42,6 +42,19 @@ const AMBIENCE_ORDER: AmbienceChoice[] = ['off', 'auto', 'rain', 'waves', 'wind'
 
 const INTRO_MS = 2000;
 const SAMANTHA_ID = 'com.apple.ttsbundle.Samantha-compact';
+
+/** RN Web has no native animation driver; using false avoids console noise. */
+const NATIVE_DRIVER = Platform.OS !== 'web';
+
+function disposeAmbiencePlayer(player: AudioPlayer | null) {
+  if (!player) return;
+  try {
+    player.pause();
+    player.remove();
+  } catch {
+    /* ignore */
+  }
+}
 
 function computeEmotionalStateSyncLocal(p: import('../types').DailyProgress): EmotionalState {
   const tone =
@@ -81,7 +94,7 @@ export default function PlayerScreen() {
   const pulse = useRef(new Animated.Value(1)).current;
   const respondScale = useRef(new Animated.Value(1)).current;
   const glow = useRef(new Animated.Value(0.42)).current;
-  const ambienceRef = useRef<Audio.Sound | null>(null);
+  const ambienceRef = useRef<AudioPlayer | null>(null);
   const isClosingRef = useRef(false);
   const hasStartedSessionRef = useRef(false);
   const finishedRef = useRef(false);
@@ -119,25 +132,25 @@ export default function PlayerScreen() {
           toValue: 1.06,
           duration: 1600,
           easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
+          useNativeDriver: NATIVE_DRIVER,
         }),
         Animated.timing(pulse, {
           toValue: 0.98,
           duration: 1600,
           easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
+          useNativeDriver: NATIVE_DRIVER,
         }),
       ])
     ).start();
   }, [pulse]);
 
   useEffect(() => {
-    void Audio.setAudioModeAsync({
-      allowsRecordingIOS: false,
-      staysActiveInBackground: false,
-      playsInSilentModeIOS: true,
-      shouldDuckAndroid: true,
-      playThroughEarpieceAndroid: false,
+    void setAudioModeAsync({
+      allowsRecording: false,
+      playsInSilentMode: true,
+      shouldPlayInBackground: false,
+      shouldRouteThroughEarpiece: false,
+      interruptionMode: 'duckOthers',
     });
   }, []);
 
@@ -146,7 +159,7 @@ export default function PlayerScreen() {
       toValue: isSpeaking ? 1 : 0.42,
       duration: isSpeaking ? 220 : 420,
       easing: Easing.inOut(Easing.ease),
-      useNativeDriver: true,
+      useNativeDriver: NATIVE_DRIVER,
     }).start();
   }, [glow, isSpeaking]);
 
@@ -214,41 +227,47 @@ export default function PlayerScreen() {
     void (async () => {
       try {
         setAmbienceError(false);
-        if (ambienceRef.current) {
-          await ambienceRef.current.stopAsync();
-          await ambienceRef.current.unloadAsync();
-          ambienceRef.current = null;
-        }
+        disposeAmbiencePlayer(ambienceRef.current);
+        ambienceRef.current = null;
         if (ambienceChoice === 'off' || phase === 'intro') return;
 
         const kind =
           ambienceChoice === 'auto' ? pickAmbience(profile) : (ambienceChoice as Exclude<AmbienceChoice, 'off' | 'auto'>);
         const source = ambienceSource(kind);
-        const { sound } = await Audio.Sound.createAsync(source, {
-          isLooping: true,
-          volume: ambienceVolume,
-          shouldPlay: true,
+        await setAudioModeAsync({
+          allowsRecording: false,
+          playsInSilentMode: true,
+          shouldPlayInBackground: false,
+          shouldRouteThroughEarpiece: false,
+          interruptionMode: 'duckOthers',
         });
+        if (cancelled) return;
+        const player = createAudioPlayer(source);
+        player.loop = true;
+        player.volume = ambienceVolume;
+        player.play();
         if (cancelled) {
-          await sound.unloadAsync();
+          disposeAmbiencePlayer(player);
           return;
         }
-        ambienceRef.current = sound;
+        ambienceRef.current = player;
       } catch {
         setAmbienceError(true);
       }
     })();
     return () => {
       cancelled = true;
+      disposeAmbiencePlayer(ambienceRef.current);
+      ambienceRef.current = null;
     };
   }, [profile, phase, ambienceChoice]);
 
   useEffect(() => {
-    void (async () => {
-      try {
-        if (ambienceRef.current) await ambienceRef.current.setVolumeAsync(ambienceVolume);
-      } catch {}
-    })();
+    try {
+      if (ambienceRef.current) ambienceRef.current.volume = ambienceVolume;
+    } catch {
+      /* ignore */
+    }
   }, [ambienceVolume]);
 
   const clearWordTick = useCallback(() => {
@@ -303,13 +322,13 @@ export default function PlayerScreen() {
         toValue: 1.08,
         duration: 140,
         easing: Easing.out(Easing.ease),
-        useNativeDriver: true,
+        useNativeDriver: NATIVE_DRIVER,
       }),
       Animated.timing(respondScale, {
         toValue: 1.0,
         duration: 220,
         easing: Easing.inOut(Easing.ease),
-        useNativeDriver: true,
+        useNativeDriver: NATIVE_DRIVER,
       }),
     ]).start();
 
@@ -395,11 +414,8 @@ export default function PlayerScreen() {
       });
 
       try {
-        if (ambienceRef.current) {
-          await ambienceRef.current.stopAsync();
-          await ambienceRef.current.unloadAsync();
-          ambienceRef.current = null;
-        }
+        disposeAmbiencePlayer(ambienceRef.current);
+        ambienceRef.current = null;
       } catch {}
     })();
   }, [phase, emotionalState, script, dailyProgress, updateProgress, appendSession]);
@@ -412,15 +428,10 @@ export default function PlayerScreen() {
     if (voiceOffTimerRef.current) clearTimeout(voiceOffTimerRef.current);
     Speech.stop();
     setIsSpeaking(false);
-    void (async () => {
-      try {
-        if (ambienceRef.current) {
-          await ambienceRef.current.stopAsync();
-          await ambienceRef.current.unloadAsync();
-          ambienceRef.current = null;
-        }
-      } catch {}
-    })();
+    try {
+      disposeAmbiencePlayer(ambienceRef.current);
+      ambienceRef.current = null;
+    } catch {}
     navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
   };
 
