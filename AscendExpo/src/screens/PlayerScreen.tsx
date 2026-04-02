@@ -79,7 +79,7 @@ export default function PlayerScreen() {
   const [phase, setPhase] = useState<'loading' | 'intro' | 'playing' | 'done'>('loading');
   const [emotionalState, setEmotionalState] = useState<EmotionalState | null>(null);
   const [script, setScript] = useState('');
-  const [scriptSource, setScriptSource] = useState<'groq' | 'fallback'>('fallback');
+  const [scriptSource, setScriptSource] = useState<'pending' | 'groq' | 'fallback'>('pending');
   const [paragraphs, setParagraphs] = useState<string[]>([]);
   const [paraIndex, setParaIndex] = useState(0);
   const [wordsShownInPara, setWordsShownInPara] = useState(0);
@@ -96,7 +96,8 @@ export default function PlayerScreen() {
   const glow = useRef(new Animated.Value(0.42)).current;
   const ambienceRef = useRef<AudioPlayer | null>(null);
   const isClosingRef = useRef(false);
-  const hasStartedSessionRef = useRef(false);
+  const dailyProgressRef = useRef(dailyProgress);
+  dailyProgressRef.current = dailyProgress;
   const finishedRef = useRef(false);
   const voiceIdRef = useRef<string | undefined>(undefined);
   const voiceLangRef = useRef<string>('en-US');
@@ -163,16 +164,16 @@ export default function PlayerScreen() {
     }).start();
   }, [glow, isSpeaking]);
 
+  /** Run once per visit to Player; `dailyProgress` is read from a ref so parent updates do not cancel mid-flight. */
   useEffect(() => {
     if (!profile) return;
-    if (hasStartedSessionRef.current) return;
-    hasStartedSessionRef.current = true;
     let cancelled = false;
 
     void (async () => {
       try {
         const state = await computeEmotionalState();
-        const scriptResult = await generateFutureSelfScript(profile, state.tone, dailyProgress);
+        const dp = dailyProgressRef.current;
+        const scriptResult = await generateFutureSelfScript(profile, state.tone, dp);
         if (cancelled || isClosingRef.current) return;
 
         setEmotionalState(state);
@@ -200,9 +201,10 @@ export default function PlayerScreen() {
         }, INTRO_MS);
       } catch {
         if (cancelled || isClosingRef.current) return;
-        const state = computeEmotionalStateSyncLocal(dailyProgress);
+        const dp = dailyProgressRef.current;
+        const state = computeEmotionalStateSyncLocal(dp);
         setEmotionalState(state);
-        const r = await generateFutureSelfScript(profile, state.tone, dailyProgress);
+        const r = await generateFutureSelfScript(profile, state.tone, dp);
         setScript(r.text);
         setScriptSource(r.source);
         setParagraphs(splitScriptIntoParagraphs(r.text));
@@ -217,7 +219,7 @@ export default function PlayerScreen() {
       cancelled = true;
       if (introTimerRef.current) clearTimeout(introTimerRef.current);
     };
-  }, [profile, dailyProgress]);
+  }, [profile]);
 
   useEffect(() => {
     if (!profile) return;
@@ -467,8 +469,19 @@ export default function PlayerScreen() {
           </Pressable>
           <View style={styles.centerMeta}>
             <Text style={styles.voiceLabel}>{isSpeaking ? 'Future self • speaking' : 'Future self'}</Text>
-            <View style={[styles.sourceBadge, scriptSource === 'groq' ? styles.sourceGroq : styles.sourceFallback]}>
-              <Text style={styles.sourceBadgeText}>{scriptSource === 'groq' ? 'Groq AI' : 'Offline'}</Text>
+            <View
+              style={[
+                styles.sourceBadge,
+                scriptSource === 'groq'
+                  ? styles.sourceGroq
+                  : scriptSource === 'pending'
+                    ? styles.sourcePending
+                    : styles.sourceFallback,
+              ]}
+            >
+              <Text style={styles.sourceBadgeText}>
+                {scriptSource === 'pending' ? '…' : scriptSource === 'groq' ? 'Groq AI' : 'Offline'}
+              </Text>
             </View>
           </View>
           <Switch value={voice} onValueChange={setVoice} trackColor={{ false: '#333', true: theme.accentCyan }} />
@@ -644,6 +657,10 @@ const styles = StyleSheet.create({
   sourceGroq: {
     backgroundColor: 'rgba(46, 204, 113, 0.18)',
     borderColor: 'rgba(46, 204, 113, 0.45)',
+  },
+  sourcePending: {
+    backgroundColor: 'rgba(255,255,255,0.35)',
+    borderColor: 'rgba(109,59,255,0.25)',
   },
   sourceFallback: {
     backgroundColor: 'rgba(241, 196, 15, 0.18)',

@@ -84,6 +84,10 @@ Current struggles: ${buildStrugglesList(profile)}
 Emotional tone: ${tone}`;
 }
 
+/** Groq often lands a little under the requested 180; rejecting to offline felt flaky. */
+const GROQ_MIN_WORDS = 140;
+const GROQ_MAX_WORDS = 280;
+
 function countWords(s: string): number {
   return s.trim().split(/\s+/).filter(Boolean).length;
 }
@@ -93,6 +97,35 @@ function trimToWordRange(text: string, min: number, max: number): string {
   if (words.length >= min && words.length <= max) return words.join(' ');
   if (words.length > max) return words.slice(0, max).join(' ');
   return words.join(' ');
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function groqChatCompletion(
+  baseURL: string,
+  groqKey: string,
+  model: string,
+  tone: EmotionalTone,
+  profile: FutureSelfProfile,
+  metrics: DailyProgress
+): Promise<Response> {
+  return fetch(baseURL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${groqKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      temperature: 0.75,
+      messages: [
+        { role: 'system', content: systemPrompt(tone) },
+        { role: 'user', content: userPrompt(profile, tone, metrics) },
+      ],
+    }),
+  });
 }
 
 export function offlineFutureSelfScript(profile: FutureSelfProfile, tone: EmotionalTone): string {
@@ -134,21 +167,11 @@ export async function generateFutureSelfScript(
   const model = process.env.EXPO_PUBLIC_GROQ_MODEL ?? 'llama-3.1-8b-instant';
 
   try {
-    const res = await fetch(baseURL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${groqKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.75,
-        messages: [
-          { role: 'system', content: systemPrompt(tone) },
-          { role: 'user', content: userPrompt(profile, tone, metrics) },
-        ],
-      }),
-    });
+    let res = await groqChatCompletion(baseURL, groqKey, model, tone, profile, metrics);
+    if (!res.ok && (res.status === 429 || res.status === 503)) {
+      await sleep(1200);
+      res = await groqChatCompletion(baseURL, groqKey, model, tone, profile, metrics);
+    }
 
     if (!res.ok) {
       const detail = await res.text().catch(() => '');
@@ -168,12 +191,12 @@ export async function generateFutureSelfScript(
       text = `${expectedOpen} ${text}`;
     }
     let wc = countWords(text);
-    if (wc > 220) text = trimToWordRange(text, 180, 220);
+    if (wc > GROQ_MAX_WORDS) text = trimToWordRange(text, GROQ_MIN_WORDS, GROQ_MAX_WORDS);
     wc = countWords(text);
-    if (wc < 180 || wc > 220) {
-      text = trimToWordRange(text, 180, 220);
+    if (wc < GROQ_MIN_WORDS || wc > GROQ_MAX_WORDS) {
+      text = trimToWordRange(text, GROQ_MIN_WORDS, GROQ_MAX_WORDS);
       const wc2 = countWords(text);
-      if (wc2 < 180) return { text: offlineFutureSelfScript(profile, tone), source: 'fallback' };
+      if (wc2 < GROQ_MIN_WORDS) return { text: offlineFutureSelfScript(profile, tone), source: 'fallback' };
     }
 
     return { text, source: 'groq' };
